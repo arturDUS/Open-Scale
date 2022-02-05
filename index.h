@@ -618,7 +618,7 @@ const char index_html[] PROGMEM = R"========(
       <tr> <!-- Zeile 9-->
         <td style="font-size:22px" align="right">Passwort</td>
         <td align="left">
-          <input style="font-size:22px" placeholder="WiFi Passwort" type="text" id="CFG_iPasswort">
+          <input style="font-size:22px" placeholder="*****" type="text" id="CFG_iPasswort">
           <!-- <span >g</span> -->
         </td>
       </tr>
@@ -667,10 +667,10 @@ const char index_html[] PROGMEM = R"========(
   var IstWert = 146.0; // Istwert von der Waage
   var MaxWert = 1000.0;  // Maximalwert der Waage
   var Toleranz = 5;   // Toleranzbereich der Waage
-  var Betriebsmodus = 0;// 0: Standardeinwaage (Summierung, Maximalgewicht)
-                        // 1: Komponenten Einwaage (Zielgewicht)
-                        // 2: Zählwaage
-                        // 3: Kontrollwaage
+  var Betriebsmodus = -1;// 0: Standardeinwaage (Summierung, Maximalgewicht)
+                         // 1: Komponenten Einwaage (Zielgewicht)
+                         // 2: Zählwaage
+                         // 3: Kontrollwaage
 
   // Werte die für die verschiedenen Dialoge gebraucht werden und nicht bei jedem Refresh gelöscht werden sollen
   var Gesamtgewicht = +0; // Gesamtgewicht über alle Messungen bei der Standardeinwaage
@@ -1176,8 +1176,15 @@ function WriteConfig() {
         { configdata.WiFiMode = i;
           console.log("Default WiFi Modus: " + i);
         }
-    } 
+    }
   
+  const pwd = document.getElementById("CFG_iPasswort").value;
+  if(pwd.length > 4) { 
+    configdata.PWD = pwd;
+  } else {
+    configdata.PWD = "";
+  } 
+
   // Konfiguration an Waage schicken
   websocket.send(JSON.stringify(configdata));
 }
@@ -1288,6 +1295,10 @@ function onMessage(event) {
     configdata.Defaultmode = obj.Defaultmode;
     radioButtons = document.getElementsByName("CFG_stdBM");
     radioButtons[configdata.Defaultmode].checked = true;
+    if(Betriebsmodus != configdata.Defaultmode) {
+      Betriebsmodus = configdata.Defaultmode;
+      refreshSite();
+    }
     configdata.WiFiMode = obj.WiFiMode;
     radioButtons = document.getElementsByName("CFG_stdWIFI");
     radioButtons[configdata.WiFiMode].checked = true; 
@@ -1335,10 +1346,14 @@ function refreshSite() {
 }
   
 function onLoad(event) {
+  document.getElementById("Menurow").style.display = "none"; // Menuzeile ausblenden
+  document.getElementById("StandardWeighingDialog").style.display = 'none';
+  document.getElementById("ComponentWeighingDialog").style.display = 'none';
+  document.getElementById("CountScaleDialog").style.display = 'none';
+  document.getElementById("CheckScaleDialog").style.display = 'none'; 
   initWebSocket();
   initButton();
-  document.getElementById("Menurow").style.display = "none"; // Menuzeile ausblenden
-  refreshSite();
+  //refreshSite(); // Es wird auf die configuration gewartet. Vorher wird ncihts angezeigt
 }
 
 function initButton() {
@@ -1443,6 +1458,10 @@ function close_modal_EGB_click() {
 
 // Button aus Konfig Dialog
 function close_modal_config_click() {
+  // Passwort wieder löschen
+  configdata.PWD = ""; // Passwort wird nur übertragen wenn mindestens 4 Zeichen gefüllt sind
+  document.getElementById("CFG_iPasswort").value = "";
+  
   document.getElementById("Konfiguration").style.display = "none";
   refreshSite();  // Ansicht erneuern 
 }

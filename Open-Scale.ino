@@ -60,7 +60,7 @@ typedef struct {
   char APIP[15]="192.168.4.1\0";          // IP address in accesspoint mode  https://arduino-esp8266.readthedocs.io/en/latest/esp8266wifi/soft-access-point-class.html
   char APgateway[15]="192.168.4.1\0";     // gateway Ip address in accesspoint mode
   char APsubnetmask[15]="255.255.255.0\0";// subnet mask in accesspoint mode
-  char pwd[32]="1974DerBesteJahrgang\0";  // WiFi Passwort in Clientmode
+  char WiFiPWD[32]="1974DerBesteJahrgang\0";  // WiFi Passwort in Clientmode
   uint8_t WiFiMode=0;                   // 0:Wifi not configured, 1:Wifi disabled on startup, 2: 1:Connect to existing WiFi, 2:Accesspoint mode
   uint8_t Defaultmode=0;                // Default Mode to start with (0: Standard weighing, 1: Component weighing, 2:Count scale, 3:Check scale)
   float ScaleMaxRange=1000;
@@ -271,7 +271,6 @@ void CheckWiFi(){
       // Start webserver
       server.begin();
       WiFiStatus = WEBSERVERACTIVE;
-      SendConfigToClient();
     } else {
       // Webanfragen beantworten
       ws.cleanupClients();
@@ -312,7 +311,7 @@ void loop() {
       EnterValue(0, 40, -333.5, 1799.9, 2, 23.1, "Testwert 1:");    
       break;
     case 12:
-      SendConfigToClient(); //EnterValue(0, 40, 0, 999.9, 1, 23.1, "Testwert 2:");
+      // SendConfigToClient(); //EnterValue(0, 40, 0, 999.9, 1, 23.1, "Testwert 2:");
       break;
     case 13:
       EnterValue(0, 40, -333, 999, 0, -23, "Testwert 3:");
@@ -406,7 +405,7 @@ void SendConfigToClient() {
   myObject["APIP"] = settings.APIP;
   myObject["APgateway"] = settings.APgateway;
   myObject["APsubnetmask"] = settings.APsubnetmask;
-  myObject["pwd"] = settings.pwd;
+  myObject["PWD"] = ""; //settings.WiFiPWD;  // Das Passwort wird nicht an den Clienten geschickt. Passwort wird nur in eine Richtugn ausgetauscht!
   myObject["WiFiMode"] = settings.WiFiMode;
   myObject["Defaultmode"] = settings.Defaultmode;
   myObject["IP"] = "";
@@ -442,15 +441,24 @@ void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
           // Es ist ein JSON-String der die configuration enthaält.
           if (myObject.hasOwnProperty("Name")) {strcpy(settings.Name, (const char*)myObject["Name"]);};
           if (myObject.hasOwnProperty("SSID")) {strcpy(settings.WiFiSSID, (const char*)myObject["SSID"]); };
-          if (myObject.hasOwnProperty("APIP")) { };
-          if (myObject.hasOwnProperty("APgateway")) { };
-          if (myObject.hasOwnProperty("APsubnetmask")) { };
-          if (myObject.hasOwnProperty("pwd")) { };
-          if (myObject.hasOwnProperty("WiFiMode")) {settings.WiFiMode = (int)myObject["WiFiMode"]; };
-          if (myObject.hasOwnProperty("Defaultmode")) {settings.Defaultmode = (int)myObject["Defaultmode"]; };
-          if (myObject.hasOwnProperty("ScaleMaxRange")) {settings.ScaleMaxRange = (double)myObject["ScaleMaxRange"]; };
-          if (myObject.hasOwnProperty("ScaleSteps")) {settings.ScaleSteps = (double)myObject["ScaleSteps"]; };
-          if (myObject.hasOwnProperty("ScaleTolerance")) {settings.ScaleTolerance = (double)myObject["ScaleTolerance"]; };          
+          if (myObject.hasOwnProperty("APIP")) {strcpy(settings.APIP, (const char*)myObject["APIP"]);  };
+          if (myObject.hasOwnProperty("APgateway")) {strcpy(settings.APgateway, (const char*)myObject["APgateway"]);  };
+          if (myObject.hasOwnProperty("APsubnetmask")) {strcpy(settings.APsubnetmask, (const char*)myObject["APsubnetmask"]);  };
+          if (myObject.hasOwnProperty("PWD")) {
+            char pwd[32];
+            strcpy(pwd, (const char*)myObject["PWD"]);
+            if(strlen(pwd) > 4) {
+              // Es wurde ein neues Passwort empfangen
+              strcpy(settings.WiFiPWD, pwd);
+              Serial.print("Neues WiFi-Passwort gesetzt: "); Serial.println(pwd);
+              }
+            };
+          if (myObject.hasOwnProperty("WiFiMode")) {settings.WiFiMode = (int)myObject["WiFiMode"];};
+          if (myObject.hasOwnProperty("Defaultmode")) {settings.Defaultmode = (int)myObject["Defaultmode"];};
+          if (myObject.hasOwnProperty("ScaleMaxRange")) {settings.ScaleMaxRange = atof(myObject["ScaleMaxRange"]);};
+          if (myObject.hasOwnProperty("ScaleSteps")) {settings.ScaleSteps = atof(myObject["ScaleSteps"]);};
+          if (myObject.hasOwnProperty("ScaleTolerance")) {settings.ScaleTolerance = atof(myObject["ScaleTolerance"]);};          
+          WriteSettings();  // Konfiguration in das EEPROm schreiben
          }
        }  
     }
@@ -464,7 +472,7 @@ void SetDefaultConfig(void) {
   strcpy(settings.APIP, "192.168.1.1\0");
   strcpy(settings.APgateway, "192.168.1.1\0");
   strcpy(settings.APsubnetmask, "255.255.255.0\0"); 
-  strcpy(settings.pwd, "\0");
+  strcpy(settings.WiFiPWD, "\0");
   settings.WiFiMode = 2;                            // Accesspoint Mode
   settings.Defaultmode = 0;                         // Standard Weighing
   settings.ScaleMaxRange = 1000;                    // 1000g Scale

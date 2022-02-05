@@ -320,6 +320,19 @@ const char index_html[] PROGMEM = R"========(
                   -->
               </select>
             </td>
+            <td rowspan="2" valign=middle>
+              <div>
+                <label style="font-size:22px" class="container" align="left"> Additiv
+                  <input type="radio" name="STD_Type" checked="checked" onclick="std_type_click()">
+                  <span class="checkmark"></span>
+                </label> <br>
+        
+                <label style="font-size:22px" class="container" align="left"> Einzel
+                  <input type="radio" name="STD_Type" onclick="std_type_click()">
+                  <span class="checkmark"></span>
+                </label> <br>
+              </div>
+            </td>
           </tr>
           <tr>
             <td>
@@ -585,6 +598,13 @@ const char index_html[] PROGMEM = R"========(
         </td>
       </tr>
 
+      <tr> <!-- Zeile 6 a-->
+        <td style="font-size:22px" align="right">Einheit</td>
+        <td align="left">
+          <input style="font-size:22px; width:200px" placeholder="mg, g, kg, t, lbs" type="text" id="CFG_iUnit">
+        </td>
+      </tr>
+
       <tr> <!-- Zeile 7-->
         <td style="font-size:22px" valign=top align="right">Startup Wifi Mode</td>
         <td align="left">
@@ -674,6 +694,8 @@ const char index_html[] PROGMEM = R"========(
 
   // Werte die für die verschiedenen Dialoge gebraucht werden und nicht bei jedem Refresh gelöscht werden sollen
   var Gesamtgewicht = +0; // Gesamtgewicht über alle Messungen bei der Standardeinwaage
+  var STD_WType = 0;      // Wiegetyp 0: Additiv - Einzelgewichte werden auf die Waage hinzugefügt
+                          //          1: Einzel - Einzelgewichte werden nacheinander gewogen und immer von der Waage entfern 
   var Messungen = [];    // Enthält die einzelnen Messungen
   var Einzelgewicht = +0; // Einzelgewicht aus dem Einzelgewichtsbestimmungsdialog
   var ContrMinGewicht = +0;
@@ -695,7 +717,8 @@ const char index_html[] PROGMEM = R"========(
     IP: '',                         // Aktuelle IP Adresse - id="CFG_IPNumber" innerHTML
     ScaleMaxRange: 1000,            // Maximaler Wägebereich - id="CFG_iMaxRange"
     ScaleSteps: 0.1,                // Anzeigegenauigkeit - id="CFG_iSchrittweite"
-    ScaleTolerance: 5               // Wiegetoleranz - id="CFG_iSchrittweite"
+    ScaleTolerance: 5,              // Wiegetoleranz - id="CFG_iSchrittweite"
+    ScaleUnit: 'g'                  // Einheit der Waage - id="CFG_iUnit"
   };
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -742,13 +765,13 @@ function StandardWeighing() {
   ctx.fillStyle = "rgb(0,0,0)";       // Grün
   ctx.font="bold 32px Arial";
   ctx.textAlign ="center";
-  ctx.fillText(Number(Gesamtgewicht).toFixed(1) + "g",MaxBreite/2 + 20,52);
+  ctx.fillText(Number(Gesamtgewicht).toFixed(1) + configdata.ScaleUnit,MaxBreite/2 + 20,52);
   // Grenzen eintragen
   ctx.font="24px Arial";
   ctx.textAlign ="left";
-  ctx.fillText("0g",20,90); 
+  ctx.fillText("0"+configdata.ScaleUnit,20,90); 
   ctx.textAlign ="right";
-  ctx.fillText(Number(MaxWert).toFixed(1) + "g",canvas.width-20,90);
+  ctx.fillText(Number(MaxWert).toFixed(1) + configdata.ScaleUnit,canvas.width-20,90);
 
   //////////////////////////////////////////////////
   // Unterer Balken: Aktuelles Gewicht
@@ -783,9 +806,9 @@ function StandardWeighing() {
   ctx.fillStyle = "rgb(0,0,0)";
   ctx.font="24px Arial";
   ctx.textAlign ="left";
-  ctx.fillText("0g",20,205); 
+  ctx.fillText("0"+configdata.ScaleUnit,20,205); 
   ctx.textAlign ="right";
-  ctx.fillText(Number(AMaxWert).toFixed(1) + "g",canvas.width-20,205);
+  ctx.fillText(Number(AMaxWert).toFixed(1) + configdata.ScaleUnit,canvas.width-20,205);
 
   // IST Box
   ctx.lineWidth = 3;
@@ -798,7 +821,7 @@ function StandardWeighing() {
   ctx.fillText("Ist:",60,290);  
   ctx.font="bold 80px Arial";
   ctx.textAlign ="center";
-  ctx.fillText(Number(IstWert).toFixed(1) + "g", MaxBreite/2,290);
+  ctx.fillText(Number(IstWert).toFixed(1) + configdata.ScaleUnit, MaxBreite/2,290);
 }
 
 
@@ -810,7 +833,7 @@ function addValue(v) {
   var Eintrag =document.createElement('option');
   Eintrag.setAttribute("class", "service-small");
   //Eintrag.value = 3;
-  Eintrag.text = Number(IstWert).toFixed(1) + "g";
+  Eintrag.text = Number(IstWert).toFixed(1) + configdata.ScaleUnit;
   Gesamtgewicht = Number(Gesamtgewicht) + Number(IstWert);
   websocket.send('tare'); // Waage tarieren
   list.appendChild(Eintrag);   
@@ -910,7 +933,7 @@ function ComponetWeighing() {
   ctx.font="24px Arial";
   ctx.fillText("Soll:",xtemp,30); 
   ctx.font="bold 32px Arial";
-  ctx.fillText(Number(SollWert).toFixed(1) + "g",xtemp + 50,30);
+  ctx.fillText(Number(SollWert).toFixed(1) + configdata.ScaleUnit,xtemp + 50,30);
   
   // Pfeil für IstMenge einzeichnen
   ctx.fillStyle = "rgb(0,0,250)";
@@ -989,7 +1012,7 @@ function ComponetWeighing() {
       ctx.fill(); 
       // Rest Wert
       ctx.fillStyle = "rgb(0,0,0)";
-      ctx.fillText((Number(SollWert-IstWert).toFixed(1)) + "g",(xSollDetail-xIst-btemp)/2+xIst,185);
+      ctx.fillText((Number(SollWert-IstWert).toFixed(1)) + configdata.ScaleUnit,(xSollDetail-xIst-btemp)/2+xIst,185);
     } else if(IstWert > SollWert) {
       ctx.fillStyle = "rgb(200,0,0)";
       ctx.beginPath();      // Pfeil nach Links für Differenz Wert
@@ -998,7 +1021,7 @@ function ComponetWeighing() {
         ctx.lineTo(xSollDetail+30, 197);
       ctx.fill();
       // Zuviel Wert
-      ctx.fillText(Number(SollWert-IstWert).toFixed(1) + "g",(xIst-xSollDetail-btemp)/2+xSollDetail,185);
+      ctx.fillText(Number(SollWert-IstWert).toFixed(1) + configdata.ScaleUnit,(xIst-xSollDetail-btemp)/2+xSollDetail,185);
     }
   } else {
     // Wert ist ausserhalb der Toleranz
@@ -1017,16 +1040,16 @@ function ComponetWeighing() {
   ctx.fillText("Ist:",40,290);  
   ctx.font="bold 80px Arial";
   ctx.textAlign ="center";
-  ctx.fillText(Number(IstWert).toFixed(1) + "g", (MaxBreite+40)/2,290);
+  ctx.fillText(Number(IstWert).toFixed(1) + configdata.ScaleUnit, (MaxBreite+40)/2,290);
   
   // Texte
   ctx.font="16px Arial";
   ctx.textAlign ="left";
-    ctx.fillText("0g",20,100);
-    ctx.fillText(Number(MinDetail).toFixed(1)+"g",20,180);
+    ctx.fillText("0"+configdata.ScaleUnit,20,100);
+    ctx.fillText(Number(MinDetail).toFixed(1)+configdata.ScaleUnit,20,180);
   ctx.textAlign ="right";
-    ctx.fillText(Number(MaxWert).toFixed(1)+"g", canvas.width - 20,100);
-    ctx.fillText(Number(MaxDetail).toFixed(1)+"g",canvas.width - 20,180);
+    ctx.fillText(Number(MaxWert).toFixed(1)+configdata.ScaleUnit, canvas.width - 20,100);
+    ctx.fillText(Number(MaxDetail).toFixed(1)+configdata.ScaleUnit,canvas.width - 20,180);
 }
 
 
@@ -1091,8 +1114,8 @@ function CheckScale() {
     ctx.fillStyle = "rgb(0,0,0)";
     ctx.font="16px Arial";
     ctx.textAlign ="center";
-    ctx.fillText(Number(ContrMinGewicht).toFixed(1)+"g",120,140);
-    ctx.fillText(Number(ContrMaxGewicht).toFixed(1)+"g",MaxBreite-80,140);
+    ctx.fillText(Number(ContrMinGewicht).toFixed(1)+configdata.ScaleUnit,120,140);
+    ctx.fillText(Number(ContrMaxGewicht).toFixed(1)+configdata.ScaleUnit,MaxBreite-80,140);
 
     if(IstWert >= ContrMinGewicht && IstWert <= ContrMaxGewicht) {
       // Wert ist in den Grenzen
@@ -1163,6 +1186,7 @@ function WriteConfig() {
   configdata.ScaleMaxRange = document.getElementById("CFG_iMaxRange").value;
   configdata.ScaleSteps = document.getElementById("CFG_iSchrittweite").value;
   configdata.ScaleTolerance = document.getElementById("CFG_iTolerance").value;
+  configdata.ScaleUnit = document.getElementById("CFG_iUnit").value;
   radioButtons = document.getElementsByName("CFG_stdBM");
     for(i = 0; i < radioButtons.length; i++)
     {   if(radioButtons[i].checked == true) 
@@ -1195,7 +1219,7 @@ function EGB_AnzahlChange() {
   
   if(Number(x.value) != 0) {
     var E = Number(y.value) / Number(x.value);
-    document.getElementById("EGB_EinzGewicht").innerText = E.toFixed(2) + "g/Stück";  // DialogDaten aktuelisierenx.value
+    document.getElementById("EGB_EinzGewicht").innerText = E.toFixed(2) + configdata.ScaleUnit + "/Stück";  // DialogDaten aktuelisierenx.value
     Einzelgewicht = Number(E);
   } else {
     document.getElementById("EGB_EinzGewicht").innerText = "---";  // DialogDaten aktuelisierenx.value
@@ -1210,7 +1234,7 @@ function EGB_GewichtChange() {
     
   if(Number(x.value) != 0) {
     var E = Number(y.value) / Number(x.value);
-    document.getElementById("EGB_EinzGewicht").innerText = E.toFixed(2) + "g/Stück";  // DialogDaten aktuelisierenx.value
+    document.getElementById("EGB_EinzGewicht").innerText = E.toFixed(2) + configdata.ScaleUnit + "/Stück";  // DialogDaten aktuelisierenx.value
     Einzelgewicht = Number(E.toFixed(0));
   } else {
     document.getElementById("EGB_EinzGewicht").innerText = "---";  // DialogDaten aktuelisierenx.value
@@ -1292,6 +1316,8 @@ function onMessage(event) {
     document.getElementById("CFG_iMaxRange").value = configdata.ScaleMaxRange = obj.ScaleMaxRange;
     document.getElementById("CFG_iSchrittweite").value = configdata.ScaleSteps = obj.ScaleSteps;
     document.getElementById("CFG_iTolerance").value = configdata.ScaleTolerance = obj.ScaleTolerance;
+    document.getElementById("CFG_iUnit").value = configdata.ScaleUnit = obj.ScaleUnit;
+
     configdata.Defaultmode = obj.Defaultmode;
     radioButtons = document.getElementsByName("CFG_stdBM");
     radioButtons[configdata.Defaultmode].checked = true;
@@ -1482,6 +1508,13 @@ function std_clear_click(){
   while (list.firstChild) {
     list.removeChild(list.firstChild);
   }
+}
+function std_type_click(){
+  var radioButtons = document.getElementsByName("STD_Type");
+  if(radioButtons[0].checked == true) STD_WType = 0;
+  else STD_WType = 1;
+
+  refreshSite();  // Ansicht erneuern
 }
 
 // Buttons aus Dual Wiegebalken Dialog

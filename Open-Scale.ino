@@ -66,6 +66,7 @@ typedef struct {
   float ScaleMaxRange=1000;
   float ScaleSteps=0.1;
   float ScaleTolerance=4;
+  char Unit[5] = "g\0";
   float Kalibrierwert;                  // Wird nur für die Kalibrierung benötigt
 } TSettings;                            // Länge
 TSettings settings;                     // Gesamtlänge: 193 Byte ACHTUNG! Maximal 255Byte!!
@@ -415,6 +416,7 @@ void SendConfigToClient() {
     myObject["ScaleSteps"] = S;
   dtostrf(settings.ScaleTolerance, 4, 1, S);
     myObject["ScaleTolerance"] = S;
+  myObject["ScaleUnit"] = settings.Unit;
 
   // Send the JSON String
   String jsonString = JSON.stringify(myObject);
@@ -457,7 +459,8 @@ void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
           if (myObject.hasOwnProperty("Defaultmode")) {settings.Defaultmode = (int)myObject["Defaultmode"];};
           if (myObject.hasOwnProperty("ScaleMaxRange")) {settings.ScaleMaxRange = atof(myObject["ScaleMaxRange"]);};
           if (myObject.hasOwnProperty("ScaleSteps")) {settings.ScaleSteps = atof(myObject["ScaleSteps"]);};
-          if (myObject.hasOwnProperty("ScaleTolerance")) {settings.ScaleTolerance = atof(myObject["ScaleTolerance"]);};          
+          if (myObject.hasOwnProperty("ScaleTolerance")) {settings.ScaleTolerance = atof(myObject["ScaleTolerance"]);};  
+          if (myObject.hasOwnProperty("ScaleUnit")) {strcpy(settings.Unit, (const char*)myObject["ScaleUnit"]);};        
           WriteSettings();  // Konfiguration in das EEPROm schreiben
          }
        }  
@@ -478,6 +481,7 @@ void SetDefaultConfig(void) {
   settings.ScaleMaxRange = 1000;                    // 1000g Scale
   settings.ScaleSteps = 0.1;                        // 0.1g Steps
   settings.ScaleTolerance = 5;                      // Tolerance for weighing 5%
+  strcpy(settings.Unit, "g\0");
 }
 
 //////////////////////////////////////////////////////////////////////////////////

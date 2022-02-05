@@ -52,6 +52,7 @@ AsyncWebSocket ws("/ws");
 // EEPROM Daten / Konfigurationswerte
 //////////////////////////////////////////////////////////////////////////
 // Waagensettings
+// Werden die Settings erweitert(zusätzliches Feld) muss im Startup der Identifier geändert werden damit einmalig die Standradkonfiguration gesetzt wird!
 typedef struct {
   char ConfState[4];                        // Config State in EPROM: if not "SeT\0", write default values to EPROM
   char Name[16] = "Open Scale\0";            // Name der Waage
@@ -223,9 +224,9 @@ void setup() {
 
   // Konfiguration aus EEPROM Auslesen. Wenn initial dann die Standard Konfiguration laden
   ReadSettings();
-  if(strcmp(settings.ConfState, "SeT")!=0)
+  if(strcmp(settings.ConfState, "CeT")!=0)     // Der Wert muss bei jeder Konfigurationserweiterung (zusätzliches Feld) geändert werden!!!!!!!!!
   {  SetDefaultConfig();
-     strcpy(settings.ConfState, "SeT\0");
+     strcpy(settings.ConfState, "CeT\0");
      WriteSettings();     // In das EPROM schreiben
      Serial.println("Standradkonfiguration gespeichert!");
   }
@@ -424,6 +425,17 @@ void SendConfigToClient() {
   ws.textAll(jsonString);
 }
 
+void SendConfigOK() {
+  char S[40];
+  JSONVar myObject;
+
+  myObject["Type"] = "CONDIF_SAVE_OK";
+  myObject["ReturnCode"] = 0;
+  // Send the JSON String
+  String jsonString = JSON.stringify(myObject);
+  ws.textAll(jsonString);
+}
+
 void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
   AwsFrameInfo *info = (AwsFrameInfo*)arg;
   if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
@@ -462,6 +474,7 @@ void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
           if (myObject.hasOwnProperty("ScaleTolerance")) {settings.ScaleTolerance = atof(myObject["ScaleTolerance"]);};  
           if (myObject.hasOwnProperty("ScaleUnit")) {strcpy(settings.Unit, (const char*)myObject["ScaleUnit"]);};        
           WriteSettings();  // Konfiguration in das EEPROm schreiben
+          SendConfigOK();   // Zurückmelden das die Konfiguration erfolgreich gespeichert wurde.
          }
        }  
     }

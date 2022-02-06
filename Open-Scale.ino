@@ -14,6 +14,7 @@
 #include <ESPAsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 
+#define MAX_ANZ_DISPLAY_ZEICHEN 7   // Maximale Anzahl an Zeichen die beim Editieren im Display angezeigt werden können
 
 // Load images
 #include "images.h"
@@ -162,14 +163,14 @@ struct sWIFIDATA {
 
 //////////////////////////////////////////////////////////////////////////
 // Funktionsprototypen
-char getkey(void);  // Ließt den AD-Wandler aus und gibt zurück welche Taste gedrückt wurde. (Über Spannungsteiler)
+int8_t getkey(void);  // Ließt den AD-Wandler aus und gibt zurück welche Taste gedrückt wurde. (Über Spannungsteiler)
 void ReadSettings(void);
 void WriteSettings(void);
 void KalibrierMenu(void);
 void drawWeighingBar(int posy, float min, float max, float akt);
 void RangeBar(int posy, float min, float max, float akt);
 float EnterValue(char x, char y, float NumberMin, float NumberMax, char d, float v, String Beschreibung);
-int Menu(int s);
+uint8_t ConfigMenu(uint8_t s);
 void CheckWiFi(void);
 void startAPMode(void);
 void SendConfigToClient(void);
@@ -285,7 +286,8 @@ void CheckWiFi(){
 void loop() {
   long int r;
   float G, oldG;
-  char t;  // Taste dir gedrückt wurde
+  int8_t t;  // Taste die gedrückt wurde
+  String _tempIP="192.168.1.1";
 
   r = scale.get_units(2); //scale.get_value(5); //scale.read();  // Waage auslesen
   G = r;
@@ -313,10 +315,10 @@ void loop() {
       EnterValue(0, 40, -333.5, 1799.9, 2, 23.1, "Testwert 1:");    
       break;
     case 12:
-      // SendConfigToClient(); //EnterValue(0, 40, 0, 999.9, 1, 23.1, "Testwert 2:");
+      EnterText(6, 40, _tempIP, 15, ".0123456789", "IP-Adresse:");   // IP Adresse eingeben
       break;
     case 13:
-      EnterValue(0, 40, -333, 999, 0, -23, "Testwert 3:");
+      ConfigMenu(3);
       break;
     case 14:
       KalibrierMenu();
@@ -550,20 +552,218 @@ String processor(const String& var){
   return String();
 }
 
-int Menu(int s)
+uint8_t ConfigMenu(uint8_t s)
 { int m_TL;   // oberste Zeile im Display
   int m_Akt;  // Aktuell ausgewähltes Menu
-  char t=0;
-  int choice=0; // ausgewältes Menu
+
+  uint8_t choice=0; // ausgewältes Menu
+  uint8_t StartIndex=0;
+  int8_t AuswahlDisplay=0;
+  int8_t AuswahlMenuItems=0;
+  int8_t key=0;
+  uint8_t p, i;
+  String temp;
 
   while(choice==0)
   {  display.clear();
-     display.setFont(ArialMT_Plain_16);
-     display.drawString(0,0, "Beschreibung");
-     display.display();
-  }
+     display.setFont(ArialMT_Plain_10);
+     display.drawString(0,0, "Konfiguration:");
+     display.drawHorizontalLine(0, 11, 128);
 
+    StartIndex = (AuswahlMenuItems > 3) ? (AuswahlMenuItems - 3) : 0; 
+    
+    AuswahlDisplay =  (AuswahlMenuItems > 3) ? 3 : AuswahlMenuItems;
+    
+     // Menutext anzeigen
+    p = 13;                // Erste Y-Position
+    for(i=0; i<4; i++) // 4 Zeilen können angezeigt werden
+    { 
+      if(i == AuswahlDisplay)
+      { display.fillRect(10, p, 108, 12);
+        display.setColor(BLACK);
+        display.drawString(10, p, sConfigMenu[i+StartIndex]);  // Stelle i ausgeben 
+        display.setColor(WHITE);
+      } else
+      { display.drawString(10, p, sConfigMenu[i+StartIndex]);  // Stelle i ausgeben
+      }
+      // Anwelcher Position kommt der nächste Menüeintrag?
+      p=p+12;
+    }
+     
+    // Tasten auswerten
+    display.display();
+    while(getkey()>0) delay(50); // Warten das die Taste losgelassen wird
+    while((key=getkey()) == 0) delay(50);
+
+    if(key==2){
+      if(++AuswahlMenuItems > 9) AuswahlMenuItems=0; // Von Vorne anfangen      
+    }
+    if(key==3){
+      if(--AuswahlMenuItems < 0) AuswahlMenuItems=9; // Ans Ende springen      
+    }
+
+    if(key==4){ // Blaue Taste: Auswahl
+      switch(AuswahlMenuItems) {
+        case 0: //Scale Name
+          EnterText(6, 35, settings.Name, 15, "ABCDEFGHIJKLMNOPQRSTUVWabcdefghijklmnopqrstuvwxyz_", sConfigMenu[0]);
+        break;
+        case 1: //Delault Mode
+          EnterValue(0, 35, 1, 4, 0, settings.Defaultmode, sConfigMenu[1]);
+        break;
+        case 2: //Wifi SSID
+          EnterText(6, 35, settings.WiFiSSID, 31, "ABCDEFGHIJKLMNOPQRSTUVWabcdefghijklmnopqrstuvwxyz_", sConfigMenu[2]);
+        break;
+        case 3: //Wifi Passwort
+          EnterText(6, 35, settings.WiFiPWD, 31, "1234567890ABCDEFGHIJKLMNOPQRSTUVWabcdefghijklmnopqrstuvwxyz _<>|,.;:-#'+*!$%&/()=?^°@~{}", sConfigMenu[3]);
+        break;
+        case 4: //AP-IP Adresse
+          EnterText(6, 35, settings.APIP, 15, ".0123456789", sConfigMenu[4]);
+        break;
+        case 5: //WiFi Mode
+          EnterValue(0, 35, 1, 3, 0, settings.WiFiMode, sConfigMenu[5]);
+        break;
+        case 6: //Scale Max Range
+          EnterValue(0, 35, 0, 50000, 0, settings.ScaleMaxRange, sConfigMenu[6]);
+        break;
+        case 7: //Scale Steps
+          EnterValue(0, 35, 0.001, 10, 3, settings.ScaleSteps, sConfigMenu[7]);
+        break;
+        case 8: //Scale Tolerance
+          EnterValue(0, 35, 0, 100, 1, settings.ScaleTolerance, sConfigMenu[8]);
+        break;
+        case 9: //Scale Unit
+          EnterText(6, 35, settings.Unit, 3, "ABCDEFGHIJKLMNOPQRSTUVWabcdefghijklmnopqrstuvwxyz/", sConfigMenu[9]);
+        break;
+        default:
+        break;
+      }
+      
+    }
+
+    if(key==1){ // Rote Taste
+      return 0; // verlassen
+    }
+  }
 }
+;
+
+
+/////////////////////////////////////////////////////////
+// Stellt eine Funktion zur eingabe von Dezimalzahlen mit 4 Tastern bereit
+// Parameter
+// Position im Display (x,y)
+// maximale länge des Strings: lMax
+// aktueller String: t
+// erlaubte Zeichen: ac
+/////////////////////////////////////////////////////////
+String EnterText(int x, int y, String t, uint8_t lMax, String ac, String Beschreibung)
+{ char back=0;            // 0: Editieren, 1:verwerfen und abbrechen, 2:speichern und übernehmen
+  int i, p;
+  int8_t key;             // Tasten
+  String T = t;           // Neuer, editierter Text
+  int CursorPosDisplay=0; // Position des Cursors im Display 0..Maxmial anzeigbare Zeichen
+  int CursorPosString=0;  // Position des Cursors im String 0..Maximale Stringlänge
+  int StartIndex=0;       // Erstes Zeichen im Display
+  int lString=0;          // Länge des aktuellen Strings
+  
+  while(getkey()!=0) delay(100); // Warten das die Taste losgelassen wird
+  
+  // solange im Edit Modus bleiben bis zurück gegangen werden soll
+  while(!back)
+  { // Überschrift ausgeben
+    display.clear();
+    display.setFont(ArialMT_Plain_16);
+    display.drawString(0,0, Beschreibung);
+    display.drawHorizontalLine(0, 18, 128);
+    display.setFont(DialogInput_plain_24);
+
+    // Länge des aktuellen Strings ermitteln
+    lString = T.length();
+
+    // Erstes Zeichen das angeziegt wird ermitteln (Position im String)
+    StartIndex = (CursorPosString > (MAX_ANZ_DISPLAY_ZEICHEN-1)) ? (CursorPosString - MAX_ANZ_DISPLAY_ZEICHEN + 1) : 0; 
+    
+    // Cursorposition im Display ermitteln
+    CursorPosDisplay = (CursorPosString > (MAX_ANZ_DISPLAY_ZEICHEN-1)) ? MAX_ANZ_DISPLAY_ZEICHEN-1 : CursorPosString;
+    
+    // Jetzt den Text im Display ausgeben
+    p = x+6;                                        // Erste X-Position
+    for(i=0; i<((lString>MAX_ANZ_DISPLAY_ZEICHEN)?MAX_ANZ_DISPLAY_ZEICHEN:lString); i++)
+    { if(i == CursorPosDisplay)
+      { display.fillRect(p, y, 14, 31);
+        display.setColor(BLACK);
+        display.drawString(p, y,  T.substring(i+StartIndex, i+StartIndex+1));  // Stelle i ausgeben 
+        display.setColor(WHITE);
+      } else
+      { display.drawString(p, y, T.substring(i+StartIndex, i+StartIndex+1));   // Stelle i ausgeben 
+      }
+      // Anwelcher Position kommt das nächste Zeichen?
+      p=p+15;                                       // Zeichenabstand 15 Pixel
+    }
+    if(StartIndex>0){
+      // Vor dem Text < zeichnen um zu zeigen das da noch was ist.
+      display.setFont(ArialMT_Plain_16);
+      display.drawString(-1,y+6, "<");
+      display.setFont(DialogInput_plain_24);
+    }
+    if((lString-StartIndex-MAX_ANZ_DISPLAY_ZEICHEN)>0){
+      // Nach dem Text > zeichnen um zu zeigen das da noch was ist.
+      display.setFont(ArialMT_Plain_16);
+      display.drawString(120,y+6, ">");
+      display.setFont(DialogInput_plain_24);
+    }
+
+    // Tasten auswerten
+    display.display();
+    while(getkey()>0) delay(50); // Warten das die Taste losgelassen wird
+    while((key=getkey()) == 0) delay(50);
+
+    // Zeichenindex der aktuellen 
+    i = ac.indexOf(T.substring(CursorPosString, CursorPosString+1)); // Position im erlaubte Zeichen String
+    if(i==-1) i=0; // Wenn das Zeichen nicht gefunden wurde, das erste Zeichen im erlaubte Zeichen String nehmen
+    
+    // <Schwarze> Tasten: Zeichen an der aktuellen Position ändern
+    if(key == -2){   
+      i = (--i>=0)?i:ac.length()-1;   // [-] Taste
+    }
+    if(key == -3){  
+      i = (++i<ac.length())?i:0;   // [+] Taste
+    }
+
+    // Jetzt den String neu zusammen bauen
+    T = ((CursorPosString>0)?T.substring(0, CursorPosString):"") + ac.substring(i,i+1) + T.substring(CursorPosString+1);
+    
+    // Langer, schwarzer Tastendruck ([-]-Taste)löscht das Zeichen an der aktuellen Position 
+    if(key == 12){
+      if(lString>0){ // Es kann nur was gelöscht werden wenn der String länger als 0 Zeichen ist
+        T = ((CursorPosString>0)?T.substring(0, CursorPosString):"") + ((CursorPosString<lString)?T.substring(CursorPosString+1):"");
+      }
+    }
+    
+    // Langer, schwarzer Tastendruck ([+]-Taste) fügt ein Zeichen an der aktuellen Position ein 
+    if(key == 13) {
+      if(lString<lMax){ // Es können nur Zeichen eingefügt werden wenn der String noch nicht seine maximale Länge hat.
+        T = ((CursorPosString>0)?T.substring(0, CursorPosString):"") + ac.substring(0,1) + ((CursorPosString<lString)?T.substring(CursorPosString):"");
+      }
+    }
+    
+    // <Blaue> Taste: durch die Stellen rotieren
+    if(key == -4){ // nach rechts nach kurzem Tastendruck (beim loslassen)
+      if(++CursorPosString >= lString) CursorPosString=0; // Von Vorne anfangen
+    }
+    if(key == 14){ // nach links bei langem Tastendruck
+      if(--CursorPosString < 0) CursorPosString=lString-1; // Ans Ende springen
+    }
+
+    // <Rote> Taste: Abbrechen
+    if(key == 11) back = 1;  // Änderungen verwerfen
+    if(key == -1)  back = 2;  // Wert übernehmen
+  }
+  
+  if(back == 1) return t;
+  else return T;
+}
+
 
 /////////////////////////////////////////////////////////
 // Stellt eine Funktion zur eingabe von Dezimalzahlen mit 4 Tastern bereit
@@ -580,7 +780,7 @@ float EnterValue(int x, int y, float NumberMin, float NumberMax, int d, float v,
   int ld=0;         // Anzahl Dezimalstellen
   int ldg=0;        // 
   int i, p, SP;
-  char t;           // Tasten
+  int8_t t;           // Tasten
   float V = v;      // Neuer, editierter Wert
   long prev;
   long NMax = abs((long)NumberMax);
@@ -629,7 +829,8 @@ float EnterValue(int x, int y, float NumberMin, float NumberMax, int d, float v,
     display.clear();
     display.setFont(ArialMT_Plain_16);
     display.drawString(0,0, Beschreibung);
-    display.setFont(ArialMT_Plain_24);
+    display.drawHorizontalLine(0, 18, 128);
+    display.setFont(DialogInput_plain_24);
     // jetzt die einzelnen Stellen im Displaybereich ausgeben
     // Zahl in die Stellen aufteilen
     i=0;
@@ -650,7 +851,7 @@ float EnterValue(int x, int y, float NumberMin, float NumberMax, int d, float v,
     for(i=0; i<lMax; i++)
     { if(DisplayNumber==1)                        // Wenn die Zahl angezeigt werden soll (Blinken)
       { if(i == PosCursor)
-        { display.fillRect(p, y, 14, 24);
+        { display.fillRect(p, y, 14, 31);
           display.setColor(BLACK);
           display.drawString(p, y, (String)S[i]);     // Stelle i ausgeben 
           display.setColor(WHITE);
@@ -659,8 +860,7 @@ float EnterValue(int x, int y, float NumberMin, float NumberMax, int d, float v,
         }
       }
       // Anwelcher Position kommt das nächste Zeichen?
-      if(S[i]=='.') p=p+8;                        // Bei Kommazeichen etwas näher zusammen rücken
-      else p=p+15;                                // Zeichenabstand für Zahlen
+      p=p+15;                                         // Zeichenabstand für Zahlen
     }    
 
     // Tasten auswerten
@@ -702,7 +902,7 @@ float EnterValue(int x, int y, float NumberMin, float NumberMax, int d, float v,
     if(d>0) V = atof(S);
     else V = atoi(S); 
 
-    RangeBar(23, NumberMin, NumberMax, V);
+    //RangeBar(23, NumberMin, NumberMax, V);
 
     if(V<NumberMin || V>NumberMax) // Display blinken lassen wenn Wert ausserhalb der Grenzen
     { if(millis() > ToggleTime)
@@ -711,8 +911,6 @@ float EnterValue(int x, int y, float NumberMin, float NumberMax, int d, float v,
       }
     } else DisplayNumber = 1;
 
-    //display.drawBitmap(104, 40, Cancel2424, 24, 24, WHITE);
-    
     display.display();
     delay(80);
   }
@@ -777,11 +975,12 @@ void drawWeighingBar(int posy, float min, float max, float akt)
 }
 
 
-char getkey(void)
+int8_t getkey(void)
 { unsigned int a = analogRead(A0);  // AD-Wert einlesen
-  char k;
-  static char prev_k;
+  int8_t k;
+  static int8_t prev_k;
   static long int m_start;
+  char b[60];
 
   // Wert geht von 0 bis 1024
   // Tastenabstand bei 4 Tastern (Abhängig vom Spannungsteiler) 1024/5 = 205 (Bereich +-50)
@@ -799,12 +998,18 @@ char getkey(void)
   if(a>185 && a<285) k = 4;
 
   if(k != prev_k)
-  { m_start = millis();  // Zeitpunkt merken
-    prev_k = k;
-    value.Button = k;
-    return k;
+  { if(k==0 && prev_k>0 && prev_k<10)
+    { k = -prev_k;
+      prev_k = 0;
+      return k;
+    } else 
+    { m_start = millis();  // Zeitpunkt merken
+      prev_k = k;
+      value.Button = k;
+      return k;
+    }
   } else
-  { if((k != 0) && (millis()-m_start > 1000))
+  { if((k != 0) && (millis()-m_start > 700))
     { prev_k = k;
       k=k+10;
       value.Button = k;
@@ -865,7 +1070,7 @@ void WriteRezept_big(void)
 void KalibrierMenu(void)
 {  long k;
    float kali;  
-   char t; // Taste die gedrückt wurde
+   int8_t t; // Taste die gedrückt wurde
   display.setFont(ArialMT_Plain_16);
   
   // 1. Waage entlasten

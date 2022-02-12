@@ -8,4 +8,14 @@ const char sConfigMenu[][17] PROGMEM = {"Scale Name",
                                           "Scale Max Range",
                                           "Scale Steps",
                                           "Scale Tolerance",
-                                          "Scale Unit"};
+                                          "Scale Unit",
+                                          "* CALIBRATE! *"};
+
+const char sConfigWiFiModes[][14] PROGMEM = { "Disabled",
+                                              "WiFiClient",
+                                              "AcessPoint"};
+
+const char aConfigStdMode[][14] PROGMEM = { "Standard",
+                                            "Komponennten",
+                                            "Zählen",
+                                            "Kontroll"};

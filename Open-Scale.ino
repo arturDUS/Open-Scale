@@ -28,12 +28,6 @@
 #include "index.h"
 ////////////////////////////////////
 
-////////////////////////////////////////////////////////
-// WiFi Setup
-const char* ssid = "LoxDUS";
-const char* password = "1974DerBesteJahrgang";
-////////////////////////////////////////////////////////
-
 // Klassen definieren
 // Initialize the OLED display using Arduino Wire:
 SSD1306Wire display(0x3c, SDA, SCL);   // ADDRESS, SDA, SCL  -  SDA and SCL usually populate automatically based on your board's pins_arduino.h
@@ -55,19 +49,19 @@ AsyncWebSocket ws("/ws");
 // Waagensettings
 // Werden die Settings erweitert(zusätzliches Feld) muss im Startup der Identifier geändert werden damit einmalig die Standradkonfiguration gesetzt wird!
 typedef struct {
-  char ConfState[4];                        // Config State in EPROM: if not "SeT\0", write default values to EPROM
-  char Name[16] = "Open Scale\0";            // Name der Waage
-  char WiFiSSID[32]="LoxDUS\0";               // WiFi SSID
-  char IP[15];                          // Static WiFi IP Adress when connecting as Client to WiFi
-  char APIP[15]="192.168.4.1\0";          // IP address in accesspoint mode  https://arduino-esp8266.readthedocs.io/en/latest/esp8266wifi/soft-access-point-class.html
-  char APgateway[15]="192.168.4.1\0";     // gateway Ip address in accesspoint mode
-  char APsubnetmask[15]="255.255.255.0\0";// subnet mask in accesspoint mode
-  char WiFiPWD[32]="1974DerBesteJahrgang\0";  // WiFi Passwort in Clientmode
+  char ConfState[4];                      // Config State in EPROM: if not "SeT\0", write default values to EPROM
+  char Name[16] = "\0";         // Name der Waage
+  char WiFiSSID[32]="\0";           // WiFi SSID
+  char IP[15];                            // Static WiFi IP Adress when connecting as Client to WiFi
+  char APIP[15]="\0";                     // IP address in accesspoint mode  https://arduino-esp8266.readthedocs.io/en/latest/esp8266wifi/soft-access-point-class.html
+  char APgateway[15]="\0";     // gateway Ip address in accesspoint mode
+  char APsubnetmask[15]="\0";// subnet mask in accesspoint mode
+  char WiFiPWD[32]="\0";  // WiFi Passwort in Clientmode
   uint8_t WiFiMode=0;                   // 0:Wifi not configured, 1:Wifi disabled on startup, 2: 1:Connect to existing WiFi, 2:Accesspoint mode
   uint8_t Defaultmode=0;                // Default Mode to start with (0: Standard weighing, 1: Component weighing, 2:Count scale, 3:Check scale)
-  float ScaleMaxRange=1000;
+  float ScaleMaxRange=0;
   float ScaleSteps=0.1;
-  float ScaleTolerance=4;
+  float ScaleTolerance=10;
   char Unit[5] = "g\0";
   float Kalibrierwert;                  // Wird nur für die Kalibrierung benötigt
 } TSettings;                            // Länge
@@ -199,8 +193,6 @@ void setup() {
   value.Mode = 0;
   
   Serial.begin(115200);
-  Serial.println();
-  Serial.println();
 
   // Initialising the UI will init the display too.
   display.init();
@@ -225,10 +217,11 @@ void setup() {
 
   // Konfiguration aus EEPROM Auslesen. Wenn initial dann die Standard Konfiguration laden
   ReadSettings();
-  if(strcmp(settings.ConfState, "CeT")!=0)     // Der Wert muss bei jeder Konfigurationserweiterung (zusätzliches Feld) geändert werden!!!!!!!!!
-  {  SetDefaultConfig();
-     strcpy(settings.ConfState, "CeT\0");
-     WriteSettings();     // In das EPROM schreiben
+  if(strcmp(settings.ConfState, "V01")!=0)    // Der Wert muss bei jeder Konfigurationserweiterung (zusätzliches Feld) geändert werden!!!!!!!!!
+  {  SetDefaultConfig();                      // Defaultwerte setzen
+     strcpy(settings.ConfState, "V01\0");
+     ConfigMenu(1);                           // Konfigurationsmenü aufrufen
+     WriteSettings();                         // Konfiguration in das EPROM schreiben
      Serial.println("Standradkonfiguration gespeichert!");
   }
   
@@ -239,11 +232,11 @@ void setup() {
   display.display();
   // Enable WIFI
   WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password); //-------------------------------------WiFi mode mit default ssid und passwort! noch nicht aus konfig ausgelesen!!!!!!!
-  WiFiStatus = ENABLED; // Wifi is enabled
-  // Show Splash for 3 seconds
+  WiFi.begin(settings.WiFiSSID, settings.WiFiPWD);   // Start WifiMode
+  WiFiStatus = ENABLED;                              // Wifi is enabled
+  // Show Splash for 1 seconds
   while(getkey()!=0) delay(100);
-  t = millis() + 3000;
+  t = millis() + 1000;
   while( t> millis() && getkey()==0){
     delay(100);
   }
@@ -264,7 +257,7 @@ void CheckWiFi(){
   } else
   { if(WiFiStatus < CONNECTED) {
       temp = WiFi.localIP().toString();
-      Serial.print("WiFi connected. IP-Address: "); Serial.println(temp);
+      Serial.print("WiFi connected. Scale IP-Address: "); Serial.println(temp);
       strcpy(settings.IP, temp.c_str());
       initWebSocket();
       // Route for root / web page
@@ -287,18 +280,30 @@ void loop() {
   long int r;
   float G, oldG;
   int8_t t;  // Taste die gedrückt wurde
-  String _tempIP="192.168.1.1";
 
   r = scale.get_units(2); //scale.get_value(5); //scale.read();  // Waage auslesen
   G = r;
   G/=10;
   value.Actual = G;  // Aktuell gelesenes Gewicht als globales Gewicht auf Webseite anzeigen
 
-  CheckWiFi();
- 
+  CheckWiFi(); // Checks if WiFi is available
+
+  // Displayanzeige aktualisieren
+  display.clear();
+  drawWeighingBar(15, 0, 1000, G);
+  display.setFont(ArialMT_Plain_24);
+  display.drawString(115, 35, "g"); 
+  display.setTextAlignment(TEXT_ALIGN_RIGHT);
+  display.setFont(Roboto_Slab_Bold_34);      // display.setFont(DSEG7_Modern_Bold_30);    //display.setFont(ArialMT_Plain_24);
+  display.drawString(110, 26, String(G,1));
+  display.setTextAlignment(TEXT_ALIGN_LEFT);
+  // write the buffer to the display
+  display.display();
+
+  // Tasten auswerten
   t = getkey();
   switch (t)
-  { case 1:  // Tarieren
+  { case -1:  // Tare / Tarieren beim kurzen Tastendruck loslassen
       display.clear();
       display.setFont(ArialMT_Plain_24);
       display.drawString(0, 30, "TARIEREN");
@@ -312,16 +317,13 @@ void loop() {
     case 4:
       break; 
     case 11:
-      EnterValue(0, 40, -333.5, 1799.9, 2, 23.1, "Testwert 1:");    
+      ConfigMenu(3);   // Configuration / Konfiguration
       break;
     case 12:
-      EnterText(6, 40, _tempIP, 15, ".0123456789", "IP-Adresse:");   // IP Adresse eingeben
       break;
     case 13:
-      ConfigMenu(3);
       break;
     case 14:
-      KalibrierMenu();
       break; 
     default:
       break;
@@ -337,27 +339,16 @@ void loop() {
       scale.tare();
       break;
     case CALIBRATE:
-      KalibrierMenu();  
+      // KalibrierMenu();  
       break;
     default:
       break;
   }
   WebCmd = NOTHING;
   
-  display.clear();
-  drawWeighingBar(15, 0, 1000, G);
-  display.setFont(ArialMT_Plain_24);
-  display.drawString(115, 35, "g"); 
-  display.setTextAlignment(TEXT_ALIGN_RIGHT);
-  display.setFont(Roboto_Slab_Bold_34);      // display.setFont(DSEG7_Modern_Bold_30);    //display.setFont(ArialMT_Plain_24);
-  display.drawString(110, 26, String(G,1));
-  display.setTextAlignment(TEXT_ALIGN_LEFT);
-  // write the buffer to the display
-  display.display();
-
   delay(100);
-
 }
+
 
 void notifyClients() {
   static sWIFIDATA oldvalue;
@@ -485,18 +476,18 @@ void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
 
 // Loads the default values
 void SetDefaultConfig(void) {
-  strcpy(settings.Name, "OpenScale\0");
+  strcpy(settings.Name, "OpenScale\0");             // Will also be used as SSID if scale is in AP-Mode
   strcpy(settings.WiFiSSID, "\0");
-  strcpy(settings.APIP, "192.168.1.1\0");
+  strcpy(settings.APIP, "192.168.1.4\0");
   strcpy(settings.APgateway, "192.168.1.1\0");
   strcpy(settings.APsubnetmask, "255.255.255.0\0"); 
-  strcpy(settings.WiFiPWD, "\0");
+  strcpy(settings.WiFiPWD, "\0");                   // In AP Mode no password is required.
   settings.WiFiMode = 2;                            // Accesspoint Mode
   settings.Defaultmode = 0;                         // Standard Weighing
   settings.ScaleMaxRange = 1000;                    // 1000g Scale
   settings.ScaleSteps = 0.1;                        // 0.1g Steps
   settings.ScaleTolerance = 5;                      // Tolerance for weighing 5%
-  strcpy(settings.Unit, "g\0");
+  strcpy(settings.Unit, "g\0");                     // Default Unit is g (gramms)
 }
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -522,20 +513,28 @@ void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType 
 }
 
 
-
 void startAPMode()
-{ IPAddress local_IP(192,168,4,22);
+{ IPAddress local_IP;
   IPAddress gateway(192,168,4,9);
   IPAddress subnet(255,255,255,0);
-  
-  Serial.print("Setting soft-AP configuration ... ");
-  Serial.println(WiFi.softAPConfig(local_IP, gateway, subnet) ? "Ready" : "Failed!");
 
-  Serial.print("Setting soft-AP ... ");
-  Serial.println(WiFi.softAP("ESPsoftAP_01") ? "Ready" : "Failed!");
-
-  Serial.print("Soft-AP IP address = ");
-  Serial.println(WiFi.softAPIP());
+  if(local_IP.fromString(settings.APIP)) {              // try to parse into the IPAddress
+    Serial.print("Setting soft-AP configuration ... ");
+    if(WiFi.softAPConfig(local_IP, gateway, subnet)){
+      Serial.println("Ready");
+      Serial.print("Setting soft-AP ... ");
+      if(WiFi.softAP(settings.Name)){                   // The configured scale name will be the accesspoint name
+        Serial.println("Ready");
+        Serial.print("Soft-AP IP address = "); Serial.println(WiFi.softAPIP());
+      } else {
+        Serial.println("Failed!");
+      }
+    } else {
+      Serial.println("Failed!");
+    }
+  } else {
+    Serial.println("unparsable IP");
+  }
 }
 
 
@@ -557,7 +556,7 @@ uint8_t ConfigMenu(uint8_t s)
   int m_Akt;  // Aktuell ausgewähltes Menu
 
   uint8_t choice=0; // ausgewältes Menu
-  uint8_t StartIndex=0;
+  int8_t StartIndex=0;
   int8_t AuswahlDisplay=0;
   int8_t AuswahlMenuItems=0;
   int8_t key=0;
@@ -570,16 +569,15 @@ uint8_t ConfigMenu(uint8_t s)
      display.drawString(0,0, "Konfiguration:");
      display.drawHorizontalLine(0, 11, 128);
 
-    StartIndex = (AuswahlMenuItems > 3) ? (AuswahlMenuItems - 3) : 0; 
-    
-    AuswahlDisplay =  (AuswahlMenuItems > 3) ? 3 : AuswahlMenuItems;
+    //StartIndex = (AuswahlMenuItems > 3) ? (AuswahlMenuItems - 3) : 0;    
+    //AuswahlDisplay =  (AuswahlMenuItems > 3) ? 3 : AuswahlMenuItems;
     
      // Menutext anzeigen
     p = 13;                // Erste Y-Position
     for(i=0; i<4; i++) // 4 Zeilen können angezeigt werden
     { 
       if(i == AuswahlDisplay)
-      { display.fillRect(10, p, 108, 12);
+      { display.fillRect(8, p, 108, 12);
         display.setColor(BLACK);
         display.drawString(10, p, sConfigMenu[i+StartIndex]);  // Stelle i ausgeben 
         display.setColor(WHITE);
@@ -589,50 +587,78 @@ uint8_t ConfigMenu(uint8_t s)
       // Anwelcher Position kommt der nächste Menüeintrag?
       p=p+12;
     }
-     
+
     // Tasten auswerten
     display.display();
     while(getkey()>0) delay(50); // Warten das die Taste losgelassen wird
     while((key=getkey()) == 0) delay(50);
 
-    if(key==2){
-      if(++AuswahlMenuItems > 9) AuswahlMenuItems=0; // Von Vorne anfangen      
+    if(key==2){ // Runter
+      // Auswahl in der Gesamtliste
+      if(++AuswahlMenuItems > 10) AuswahlMenuItems=0; // Von Vorne anfangen   
+
+      // Auswahl im Display
+      if(AuswahlDisplay == 3){ // Ist aktuell die unterste Zeile markiert
+        if((StartIndex+3) == 10){ // Der letzte Bereich wird bereits angezeit also an den Anfang springen
+          StartIndex = 0;
+          AuswahlDisplay = 0;
+        } else{
+          StartIndex++; 
+        }
+      } else{  // Nur den ausgewählen Menüeintrag verschieben
+        AuswahlDisplay++;
+      }      
     }
-    if(key==3){
-      if(--AuswahlMenuItems < 0) AuswahlMenuItems=9; // Ans Ende springen      
+    
+    if(key==3){ // Hoch
+      // Auswahl in der Gesamtliste
+      if(--AuswahlMenuItems < 0) AuswahlMenuItems=10; // Ans Ende springen 
+
+      // Auswahl im Display
+      if(--AuswahlDisplay < 0){ // Ist aktuell die obere Zeile markiert
+        if(--StartIndex < 0){ // Wenn wir beim ersten Menüeintrag sind am Ende der Auswahl anfangen
+          StartIndex = 10 - 3; // Anzahl Menueinträge minus Anzahl angezeigte Menüeinträge
+          AuswahlDisplay = 3;
+        } else {
+          AuswahlDisplay = 0;
+        } 
+      } 
     }
 
     if(key==4){ // Blaue Taste: Auswahl
       switch(AuswahlMenuItems) {
         case 0: //Scale Name
-          EnterText(6, 35, settings.Name, 15, "ABCDEFGHIJKLMNOPQRSTUVWabcdefghijklmnopqrstuvwxyz_", sConfigMenu[0]);
+          EnterText(6, 35, settings.Name, 15, "ABCDEFGHIJKLMNOPQRSTUVWabcdefghijklmnopqrstuvwxyz_", sConfigMenu[0]).toCharArray(settings.Name, 16);
         break;
         case 1: //Delault Mode
-          EnterValue(0, 35, 1, 4, 0, settings.Defaultmode, sConfigMenu[1]);
+          settings.Defaultmode = ChoiceMenu(aConfigStdMode, 4, settings.Defaultmode, sConfigMenu[1]);
         break;
         case 2: //Wifi SSID
-          EnterText(6, 35, settings.WiFiSSID, 31, "ABCDEFGHIJKLMNOPQRSTUVWabcdefghijklmnopqrstuvwxyz_", sConfigMenu[2]);
+          EnterText(6, 35, settings.WiFiSSID, 31, "ABCDEFGHIJKLMNOPQRSTUVWabcdefghijklmnopqrstuvwxyz_", sConfigMenu[2]).toCharArray(settings.WiFiSSID, 32);
         break;
         case 3: //Wifi Passwort
-          EnterText(6, 35, settings.WiFiPWD, 31, "1234567890ABCDEFGHIJKLMNOPQRSTUVWabcdefghijklmnopqrstuvwxyz _<>|,.;:-#'+*!$%&/()=?^°@~{}", sConfigMenu[3]);
+          EnterText(6, 35, settings.WiFiPWD, 31, "1234567890ABCDEFGHIJKLMNOPQRSTUVWabcdefghijklmnopqrstuvwxyz _<>|,.;:-#'+*!$%&/()=?^°@~{}", sConfigMenu[3]).toCharArray(settings.WiFiPWD, 32);
         break;
         case 4: //AP-IP Adresse
-          EnterText(6, 35, settings.APIP, 15, ".0123456789", sConfigMenu[4]);
+          EnterText(6, 35, settings.APIP, 15, ".0123456789", sConfigMenu[4]).toCharArray(settings.APIP, 15);
         break;
         case 5: //WiFi Mode
-          EnterValue(0, 35, 1, 3, 0, settings.WiFiMode, sConfigMenu[5]);
+          settings.WiFiMode = ChoiceMenu(sConfigWiFiModes, 3, settings.WiFiMode, sConfigMenu[5]);
         break;
         case 6: //Scale Max Range
-          EnterValue(0, 35, 0, 50000, 0, settings.ScaleMaxRange, sConfigMenu[6]);
+          settings.ScaleMaxRange = EnterValue(0, 35, 0, 50000, 0, settings.ScaleMaxRange, sConfigMenu[6]);
         break;
         case 7: //Scale Steps
-          EnterValue(0, 35, 0.001, 10, 3, settings.ScaleSteps, sConfigMenu[7]);
+          settings.ScaleSteps = EnterValue(0, 35, 0.001, 10, 3, settings.ScaleSteps, sConfigMenu[7]);
         break;
         case 8: //Scale Tolerance
-          EnterValue(0, 35, 0, 100, 1, settings.ScaleTolerance, sConfigMenu[8]);
+          settings.ScaleTolerance = EnterValue(0, 35, 0, 100, 1, settings.ScaleTolerance, sConfigMenu[8]);
         break;
         case 9: //Scale Unit
-          EnterText(6, 35, settings.Unit, 3, "ABCDEFGHIJKLMNOPQRSTUVWabcdefghijklmnopqrstuvwxyz/", sConfigMenu[9]);
+          EnterText(6, 35, settings.Unit, 3, "ABCDEFGHIJKLMNOPQRSTUVWabcdefghijklmnopqrstuvwxyz/", sConfigMenu[9]).toCharArray(settings.Unit, 5);
+        break;
+        case 10: // Scale Calibration
+          KalibrierMenu();
         break;
         default:
         break;
@@ -640,12 +666,140 @@ uint8_t ConfigMenu(uint8_t s)
       
     }
 
-    if(key==1){ // Rote Taste
+    if(key==-1){ // kurzer roter Tastendruck (SAVE)
+      WriteSettings(); // Werte speichern
+      DisplaySaveOrCancel(1);
       return 0; // verlassen
+    }
+
+    if(key==11){ // Langer roter Tastendruck (CANCEL)
+      DisplaySaveOrCancel(0);
+      return 0; // verlassen ohne speichern
     }
   }
 }
-;
+
+void DisplaySaveOrCancel(uint8_t s){
+  long timeout=millis()+2000;
+  
+  display.clear();
+  display.setFont(ArialMT_Plain_16);
+  if(s==1){
+    display.drawString(0, 10, "Erfolgreich");
+    display.drawString(0, 30, "gespeichert!");
+  } else {
+    display.drawString(0, 0, "Änderungen");
+    display.drawString(0, 20, "wurden");
+    display.drawString(0, 40, "verworfen!");
+  }
+  display.display();
+  
+  while(getkey()>0 || millis()<timeout) delay(100); // Warten das die Taste losgelassen wird
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+// Stellt Radiobuttons dar
+// Anz: Anzhal Einträge
+// selected: selektierter Eintrag
+uint8_t ChoiceMenu(const char(* List)[14], uint8_t Anz, uint8_t selected, String Beschreibung)
+{ char back=0;            // 0: Editieren, 1:verwerfen und abbrechen, 2:speichern und übernehmen
+  uint8_t sel, p, i=0;
+  int8_t key;
+  int8_t StartIndex=0;
+  int8_t AuswahlDisplay=0;
+  int8_t AuswahlMenuItems=0;
+  int8_t selectedDisplayed;
+
+  while(getkey()!=0) delay(100); // Warten das die Taste losgelassen wird
+
+  sel = selected;
+  
+  // solange im Edit Modus bleiben bis zurück gegangen werden soll
+  while(!back)
+  { 
+    // Überschrift ausgeben
+    display.clear();
+    display.setFont(ArialMT_Plain_10);
+    display.drawString(0,0, Beschreibung);
+    display.drawHorizontalLine(0, 11, 128);
+
+    // Menutext anzeigen
+    p = 13;                // Erste Y-Position
+    for(i=0; i<((Anz>3)?4:Anz); i++) // 4 Zeilen können maximal angezeigt werden
+    { 
+      if(i == AuswahlDisplay)
+      { display.fillRect(8, p, 108, 12);
+        display.setColor(BLACK);
+        display.drawString(25, p, List[i+StartIndex]);  // Stelle i ausgeben 
+        display.drawCircle(15,p+5,5);
+        if(i+StartIndex == sel){ // Punkt in den Radiobutton zeichnen
+          display.fillCircle(15,p+5,3);
+        }
+        display.setColor(WHITE);
+      } else
+      { display.drawString(25, p, List[i+StartIndex]);  // Stelle i ausgeben
+        display.drawCircle(15,p+5,5);
+        if(i+StartIndex == sel){ // Punkt in den Radiobutton zeichnen
+          display.fillCircle(15,p+5,3);
+        }
+      }
+      // Anwelcher Position kommt der nächste Menüeintrag?
+      p=p+12;
+    }  
+
+    // Tasten auswerten
+    display.display();    
+    while(getkey()>0) delay(50); // Warten das die Taste losgelassen wird
+    while((key=getkey()) == 0) delay(50);
+
+    if(key==2){ // Runter
+      // Auswahl in der Gesamtliste
+      if(++AuswahlMenuItems > Anz-1) AuswahlMenuItems=0; // Von Vorne anfangen   
+
+      // Auswahl im Display
+      if(AuswahlDisplay == ((Anz>3)?3:Anz-1)){ // Ist aktuell die unterste Zeile markiert
+        if((StartIndex+((Anz>3)?3:Anz-1)) == Anz-1){ // Der letzte Bereich wird bereits angezeit also an den Anfang springen
+          StartIndex = 0;
+          AuswahlDisplay = 0;
+        } else{
+          StartIndex++; 
+        }
+      } else{  // Nur den ausgewählen Menüeintrag verschieben
+        AuswahlDisplay++;
+      }      
+    }
+    
+    if(key==3){ // Hoch
+      // Auswahl in der Gesamtliste
+      if(--AuswahlMenuItems < 0) AuswahlMenuItems=9; // Ans Ende springen 
+
+      // Auswahl im Display
+      if(--AuswahlDisplay < 0){ // Ist aktuell die obere Zeile markiert
+        if(--StartIndex < 0){ // Wenn wir beim ersten Menüeintrag sind am Ende der Auswahl anfangen
+          StartIndex = ((Anz>4)?(Anz-4):0); // Anzahl Menueinträge minus Anzahl angezeigte Menüeinträge
+          AuswahlDisplay = ((Anz>3)?3:Anz-1);
+        } else {
+          AuswahlDisplay = 0;
+        } 
+      } 
+    }
+
+    if(key==4){ // Blaue Taste: Auswahl
+      sel = AuswahlMenuItems;
+    }
+    
+    if(key==-1){ // kurzer roter Tastendruck (Übernehmen)
+      return sel; // verlassen
+    }
+
+    if(key==11){ // Langer roter Tastendruck (Abbrechen)
+      return selected; // verlassen ohne Änderung
+    }
+    
+  }
+  
+}
+
 
 
 /////////////////////////////////////////////////////////
@@ -755,7 +909,7 @@ String EnterText(int x, int y, String t, uint8_t lMax, String ac, String Beschre
       if(--CursorPosString < 0) CursorPosString=lString-1; // Ans Ende springen
     }
 
-    // <Rote> Taste: Abbrechen
+    // <Rote> Taste: Zurück
     if(key == 11) back = 1;  // Änderungen verwerfen
     if(key == -1)  back = 2;  // Wert übernehmen
   }
@@ -1082,7 +1236,6 @@ void KalibrierMenu(void)
   display.display();
   while(getkey()!=0) delay(100);
   while(getkey()==0) delay(100); // Warte auf Tastendruck
-
 
   // 2. Kalibrierung starten
   display.setFont(ArialMT_Plain_16);

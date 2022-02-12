@@ -8,7 +8,8 @@ It provides several weighing modes like
 > counting parts depending on theire weight
 > check weighing - define a wight range for a part and check if the current weight fits into the range
 
-![Waage](https://user-images.githubusercontent.com/45556368/153712054-4c8da314-de07-4919-b7cd-9b2828cf75ba.jpg)
+![ScaleOverview](https://user-images.githubusercontent.com/45556368/153712439-195df5cc-418c-42d9-84cb-db722e0fd0a9.png)
+
 
 
 The responsive, browser based UI is simple to operate.

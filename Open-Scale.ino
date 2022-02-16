@@ -10,6 +10,14 @@
 #include "OLEDDisplayUi.h"      // Include the UI lib
 #include <ESP8266WiFi.h>        // Load Wi-Fi library
 #include <Arduino_JSON.h>       // Process JSON Objects
+#include <vector>
+
+#include "qrcodegen.hpp"
+using std::uint8_t;
+using qrcodegen::QrCode;
+using qrcodegen::QrSegment;
+
+#include "Recipe.h"             // Funktionen für das Rezepthandling
 
 #include <ESPAsyncTCP.h>
 #include <ESPAsyncWebServer.h>
@@ -67,50 +75,6 @@ typedef struct {
 } TSettings;                            // Länge
 TSettings settings;                     // Gesamtlänge: 193 Byte ACHTUNG! Maximal 255Byte!!
 
-//////////////////////////////////////////////////////////////////////////
-// Rezepte für z.B. Epoxymischverhältnisse oder einfache chemische Verbindungen
-typedef struct {
-  char Name[20] ="Rezeptname Small\0";  // Rezeptname
-  int Nummer = 0;                 // Rezeptnummer [0..10]
-  int Anzahl_Komponenten = 0;     // Anzahl der Komponennten [1..10]
-  float K1 = 0;                   // Gewicht Komponennte 1
-  char K1_Name[25];
-  float K2 = 0;                   // Gewicht Komponennte 2
-  char K2_Name[25];
-  float K3 = 0;                   // Gewicht Komponennte 3
-  char K3_Name[25];
-  float wiegetoleranz = 5;        // wiegetoleranz um den Sollwert +/-
-} TRezept_Small;          
-TRezept_Small rezept_small[5];    // Gesamtlänge: 640 Byte
-
-// Rezepte für z.B. Gewürzmischungen oder komplexe chemische Verbindungen
-typedef struct {
-  char Name[20] ="Rezeptname Big\0";  // Rezeptname
-  int Nummer = 0;                 // Rezeptnummer [0..10]
-  int Anzahl_Komponenten = 0;     // Anzahl der Komponennten [1..10]
-  float K1 = 0;                   // Gewicht Komponennte 1
-  char K1_Name[25];
-  float K2 = 0;                   // Gewicht Komponennte 2
-  char K2_Name[25];
-  float K3 = 0;                   // Gewicht Komponennte 3
-  char K3_Name[25];
-  float K4 = 0;                   // Gewicht Komponennte 4
-  char K4_Name[25];
-  float K5 = 0;                   // Gewicht Komponennte 5
-  char K5_Name[25];
-  float K6 = 0;                   // Gewicht Komponennte 6
-  char K6_Name[25];
-  float K7 = 0;                   // Gewicht Komponennte 7
-  char K7_Name[25];
-  float K8 = 0;                   // Gewicht Komponennte 8
-  char K8_Name[25];
-  float K9 = 0;                   // Gewicht Komponennte 9
-  char K9_Name[25];
-  float K10 = 0;                  // Gewicht Komponennte 10
-  char K10_Name[25];
-  float wiegetoleranz = 5;        // wiegetoleranz um den Sollwert +/-
-} TRezept_Big;          
-TRezept_Big rezept_big[3];        // Gesamtlänge: 1056 Byte
 
 //////////////////////////////////////////////////////////////////////////
 // Scale mode
@@ -145,6 +109,12 @@ float SollWert;
 float IstWert;
 float Toleranz;
 float MaxWert;
+uint8_t NumberConnectedClients=0;  // Whenever a client connects increase the value, when a client disconnects decrease the value  
+
+
+typedef std::vector<char*> words;
+words myWords;
+words::iterator iter;
 
 struct sWIFIDATA {
   float Actual;      // Scale reading (after taring)
@@ -170,6 +140,11 @@ void startAPMode(void);
 void SendConfigToClient(void);
 void SetDefaultConfig(void);
 
+static void printQr(const QrCode &qr);
+static void CreateQRCode(String qrData);
+
+
+
 //////////////////////////////////////////////////////////////////////////
 // Webserver Funktionen
 void notifyClients();
@@ -193,6 +168,7 @@ void setup() {
   value.Mode = 0;
   
   Serial.begin(115200);
+  EEPROM.begin(5120);
 
   // Initialising the UI will init the display too.
   display.init();
@@ -280,6 +256,8 @@ void loop() {
   long int r;
   float G, oldG;
   int8_t t;  // Taste die gedrückt wurde
+  uint16_t i;
+  uint8_t v;
 
   r = scale.get_units(2); //scale.get_value(5); //scale.read();  // Waage auslesen
   G = r;
@@ -311,8 +289,24 @@ void loop() {
       scale.tare();
       break;
     case 2:
+
+      /////// TEST
+      myWords.push_back("Hello");
+      myWords.push_back("World");
+      for (iter = myWords.begin(); iter != myWords.end(); ++iter) {
+              Serial.printf("%s ", *iter);
+      }
+   
       break;
     case 3:
+      if(WiFiStatus == WEBSERVERACTIVE) CreateQRCode("http://"+WiFi.localIP().toString());
+      else {
+        display.clear();
+        display.setFont(ArialMT_Plain_24);
+        display.drawString(0, 10, "WiFi not");
+        display.drawString(0, 40, "connected");
+        display.display();
+      }
       break;
     case 4:
       break; 
@@ -347,6 +341,55 @@ void loop() {
   WebCmd = NOTHING;
   
   delay(100);
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Testfunktionen
+
+void createRecipeA(void){
+  char re[20] = "Test Rezept A\0";
+  insertBOMPos(1, 0, re, 123.45, 0.123, 5.0, "g\0");
+
+}
+
+
+// Creates a single QR Code, then prints it to the console.
+static void CreateQRCode(String qrData) {
+  char buf[50];
+
+  qrData.toCharArray(buf,50); 
+  const QrCode::Ecc errCorLvl = QrCode::Ecc::_LOW;  // Error correction level
+  
+  // Make and print the QR Code symbol
+  const QrCode qr = QrCode::encodeText(buf, errCorLvl);
+  printQr(qr);
+}
+
+// Prints the given QrCode object to the console.
+static void printQr(const QrCode &qr) {
+  int border = 1;
+  int xx, yy;
+  uint8_t tempNClients=NumberConnectedClients;
+
+  while(getkey()>0) delay(50); // Warten das die Taste losgelassen wird
+
+  display.setColor(WHITE);
+  display.fillRect(0, 0, 128, 64);
+  display.setColor(BLACK);
+
+  for (int y = 0; y < qr.getSize(); y++) {
+    for (int x = 0; x < qr.getSize(); x++) {
+       xx = x*2;
+       yy = y*2;
+       if(qr.getModule(x, y)) display.fillRect(xx+35, yy+8, 2, 2);
+    }
+  }
+  display.display();
+
+  // Jetzt warten bis eine Taste gedrückt wird oder bis sich ein client verbindet
+  while((getkey()==0) && (NumberConnectedClients==tempNClients)) delay(50);
+  display.setColor(WHITE);
 }
 
 
@@ -498,10 +541,12 @@ void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType 
     switch (type) {
       case WS_EVT_CONNECT:
         Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
+        NumberConnectedClients++;  // notify that a client has connected
         SendConfigToClient(); // Den Clienten die Konfiguration mitteilen
         break;
       case WS_EVT_DISCONNECT:
         Serial.printf("WebSocket client #%u disconnected\n", client->id());
+        NumberConnectedClients--;
         break;
       case WS_EVT_DATA:
         handleWebSocketMessage(arg, data, len);
@@ -1181,43 +1226,18 @@ int8_t getkey(void)
 
 // Konfiguration / Settings aus EEPROM Auslesen //////////////////////////////////////
 void ReadSettings(void)
-{ EEPROM.begin(5120);         // Puffergröße die verwendet werden soll
+{ // EEPROM.begin(5120);         // Puffergröße die verwendet werden soll
   EEPROM.get(0, settings);    // Anfangsadresse bei der die definierte Struktur abgelegt ist
-  EEPROM.end();               // schließen der EEPROM Operation
-}
-void ReadRezept_small(void)
-{ EEPROM.begin(5120);         // Puffergröße die verwendet werden soll
-  EEPROM.get(256, rezept_small);    // Anfangsadresse bei der die definierte Struktur abgelegt ist
-  EEPROM.end();               // schließen der EEPROM Operation
-}
-void ReadRezept_big(void)
-{ EEPROM.begin(5120);         // Puffergröße die verwendet werden soll
-  EEPROM.get(800, rezept_big);    // Anfangsadresse bei der die definierte Struktur abgelegt ist
-  EEPROM.end();               // schließen der EEPROM Operation
+  // EEPROM.end();               // schließen der EEPROM Operation
 }
 
 // Konfiguration / Settings im EEPROIM Speichern /////////////////////////////////////
 void WriteSettings(void)  // Max 255Byte!
-{ EEPROM.begin(5120);
+{ // EEPROM.begin(5120);
   EEPROM.put(0, settings); //Schreiben einer zweiten Struktur ab Adresse 0
   EEPROM.commit();
-  EEPROM.end();
+  // EEPROM.end();
 }
-
-void WriteRezept_small(void)
-{ EEPROM.begin(5120);
-  EEPROM.put(256, rezept_small); //Schreiben einer zweiten Struktur ab Adresse 0
-  EEPROM.commit();
-  EEPROM.end();
-}
-
-void WriteRezept_big(void)
-{ EEPROM.begin(5120);
-  EEPROM.put(800, rezept_big); //Schreiben einer zweiten Struktur ab Adresse 0
-  EEPROM.commit();
-  EEPROM.end();
-}
-
 
 // Kalibriermenü
 // KALIBRIEREN
@@ -1306,3 +1326,27 @@ void KalibrierMenu(void)
   settings.Kalibrierwert = kali;
   WriteSettings();  // Neuen Kalibrierwert zurück in das EEPROm schreiben
 }
+
+
+
+/* 
+ *  
+ *  Backup of functions that have been changed ****
+ *  
+ *  
+ *  
+
+// Creates a single QR Code, then prints it to the console.
+static void CreateQRCode(String qrData) {
+  const char *text = "http://192.168.178.48";       // User-supplied text
+  
+  qrData.toCharArray(buf,50); 
+  
+  const QrCode::Ecc errCorLvl = QrCode::Ecc::_LOW;  // Error correction level
+  
+  // Make and print the QR Code symbol
+  const QrCode qr = QrCode::encodeText(text, errCorLvl);
+  printQr(qr);
+
+}
+*/

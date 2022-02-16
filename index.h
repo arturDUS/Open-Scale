@@ -3,7 +3,7 @@ const char index_html[] PROGMEM = R"========(
 <!DOCTYPE HTML><html>
 <head>
   <title>Component Scale</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" charset="utf-8">
+  <meta name="viewport" content="minimal-ui, width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" charset="utf-8">
   <link rel="icon" href="data:,">
   <style>
   html {
@@ -12,7 +12,7 @@ const char index_html[] PROGMEM = R"========(
   }
   h1 {
     font-size: 1.8rem;
-    color: white;
+    color: blue;
   }
   h2{
     font-size: 1.5rem;
@@ -418,6 +418,16 @@ const char index_html[] PROGMEM = R"========(
   <div class="trapezoid-down" id="MenuHook" ></div>
   
   <div class="content">
+    <div class="card" id="WelcomeDialog">
+      <div align="center">
+          <h1> Displaymodus wählen </h1>
+          </br> </br> </br>
+          <button id="WC_btn_DeactDisplLock" class="button">Displaysperre temporär ausschalten!</button>
+          </br> </br>
+         <button id="WC_btn_WithDisplLock" class="button">Displaysperre aktiviert lassen</button>
+      </div>
+    </div>
+ 
     <div class="card" id="ComponentWeighingDialog">
       <canvas id="DualWiegebalken" width="800em" height="350em" style="border:1px solid #000000;" >
         Ihr Browser kann kein Canvas! 
@@ -493,7 +503,6 @@ const char index_html[] PROGMEM = R"========(
         <button id="CS_btn_tarieren" class="button">Tarieren</button>
       </div>
     </div>
-
 
 
     <div class="card" id="CheckScaleDialog">
@@ -825,6 +834,8 @@ const char index_html[] PROGMEM = R"========(
   var ContrMaxGewicht = +0;
   window.addEventListener('load', onLoad);
   window.addEventListener('resize', resizeCanvas, false);  // Wenn sich die Fenstergröße ändert, auch das Canvas ändern
+
+  var WelcomeConfirmed = false;     // Wurde der Anmeldebildschirm schon bestätigt?
 
   // Configurationswerte
   const configdata = {
@@ -1463,47 +1474,75 @@ function onMessage(event) {
     
   } else console.log("Unbekannte Daten empfangen: " + obj);
 
+  // Solange sich die Werte der Waage ändern den Screensaver durch ändern der Mausüposition blockieren
+
 }
 
 /////////////////////////////////////////////////////////////
 // Abhängig vom Betriebsmodus die Seite neu aufbauen
 function refreshSite() {
-  switch(Betriebsmodus) {
-    case 0: // Standardmodus
-      document.getElementById("StandardWeighingDialog").style.display = 'block';
-      document.getElementById("ComponentWeighingDialog").style.display = 'none';
-      document.getElementById("CountScaleDialog").style.display = 'none';
-      document.getElementById("CheckScaleDialog").style.display = 'none';  
-      StandardWeighing(); // Standardeinwaage neu zeichnen
-      break;
-    case 1: // Komponennteneinwaage
+  if(WelcomeConfirmed != true){
+    document.getElementById("WelcomeDialog").style.display = 'block';
     document.getElementById("StandardWeighingDialog").style.display = 'none';
-      document.getElementById("ComponentWeighingDialog").style.display = 'block';
-      document.getElementById("CountScaleDialog").style.display = 'none';
-      document.getElementById("CheckScaleDialog").style.display = 'none'; 
-      ComponetWeighing(); // Komponenten Einwaage neu zeichnen
-      break;
-    case 2: // Zählmodus
+    document.getElementById("ComponentWeighingDialog").style.display = 'none';
+    document.getElementById("CountScaleDialog").style.display = 'none';
+    document.getElementById("CheckScaleDialog").style.display = 'none';  
+  } else{
+    document.getElementById("WelcomeDialog").style.display = 'none';
+    switch(Betriebsmodus) {
+      case 0: // Standardmodus
+        document.getElementById("StandardWeighingDialog").style.display = 'block';
+        document.getElementById("ComponentWeighingDialog").style.display = 'none';
+        document.getElementById("CountScaleDialog").style.display = 'none';
+        document.getElementById("CheckScaleDialog").style.display = 'none';  
+        StandardWeighing(); // Standardeinwaage neu zeichnen
+        break;
+      case 1: // Komponennteneinwaage
       document.getElementById("StandardWeighingDialog").style.display = 'none';
-      document.getElementById("ComponentWeighingDialog").style.display = 'none';
-      document.getElementById("CountScaleDialog").style.display = 'block';
-      document.getElementById("CheckScaleDialog").style.display = 'none';
-      CountScale();  // Zählwaage zeichnen
-      break;
-      case 3: // Kontrollwaage
-    document.getElementById("StandardWeighingDialog").style.display = 'none';
-      document.getElementById("ComponentWeighingDialog").style.display = 'none';
-      document.getElementById("CountScaleDialog").style.display = 'none';
-      document.getElementById("CheckScaleDialog").style.display = 'block'; 
-      CheckScale();  // Kontrollwaage zeichnen
-      break;
-    default:
-      break;
+        document.getElementById("ComponentWeighingDialog").style.display = 'block';
+        document.getElementById("CountScaleDialog").style.display = 'none';
+        document.getElementById("CheckScaleDialog").style.display = 'none'; 
+        ComponetWeighing(); // Komponenten Einwaage neu zeichnen
+        break;
+      case 2: // Zählmodus
+        document.getElementById("StandardWeighingDialog").style.display = 'none';
+        document.getElementById("ComponentWeighingDialog").style.display = 'none';
+        document.getElementById("CountScaleDialog").style.display = 'block';
+        document.getElementById("CheckScaleDialog").style.display = 'none';
+        CountScale();  // Zählwaage zeichnen
+        break;
+        case 3: // Kontrollwaage
+      document.getElementById("StandardWeighingDialog").style.display = 'none';
+        document.getElementById("ComponentWeighingDialog").style.display = 'none';
+        document.getElementById("CountScaleDialog").style.display = 'none';
+        document.getElementById("CheckScaleDialog").style.display = 'block'; 
+        CheckScale();  // Kontrollwaage zeichnen
+        break;
+      default:
+        break;
+    }
   }
   
 }
+
+// Toggels Fullscreen mode (From Google Code....)
+function toggleFullScreen() {
+  var doc = window.document;
+  var docEl = doc.documentElement;
+
+  var requestFullScreen = docEl.requestFullscreen || docEl.mozRequestFullScreen || docEl.webkitRequestFullScreen || docEl.msRequestFullscreen;
+  var cancelFullScreen = doc.exitFullscreen || doc.mozCancelFullScreen || doc.webkitExitFullscreen || doc.msExitFullscreen;
+
+  if(!doc.fullscreenElement && !doc.mozFullScreenElement && !doc.webkitFullscreenElement && !doc.msFullscreenElement) {
+    requestFullScreen.call(docEl);
+  }
+  else {
+    cancelFullScreen.call(doc);
+  }
+}
   
 function onLoad(event) {
+  document.getElementById("WelcomeDialog").style.display = 'none';
   document.getElementById("Menurow").style.display = "none"; // Menuzeile ausblenden
   document.getElementById("StandardWeighingDialog").style.display = 'none';
   document.getElementById("ComponentWeighingDialog").style.display = 'none';
@@ -1512,6 +1551,7 @@ function onLoad(event) {
   initWebSocket();
   initButton();  
   //refreshSite(); // Es wird auf die configuration gewartet. Vorher wird ncihts angezeigt
+
 }
 
 function initButton() {
@@ -1552,6 +1592,11 @@ function initButton() {
 
   // Buttons aus Konfigurations Dialog
   document.getElementById('CFG_btn_Save').addEventListener('click', CFG_Save_click);
+
+  // Buttons vom Welcome Dialog
+  document.getElementById('WC_btn_DeactDisplLock').addEventListener('click', DisableDisplayLock_click);
+  document.getElementById('WC_btn_WithDisplLock').addEventListener('click', RunWithDisplayLock_click);
+  
 }
 
 // Buttons in der Top Navigation
@@ -1657,6 +1702,76 @@ function tarieren_click(){
 function ok_click(){
   websocket.send('tare');
 }
+
+// Play Dummy video to keep display alive (no sleep)
+let noSleep = null;
+let video = null;
+// --- Public ---
+function activate() {
+    if (!noSleep) noSleep = new NoSleep();
+}
+
+function deactivate() {
+    if (noSleep) {
+        noSleep.stop();
+        noSleep = null;
+    }
+}
+
+// --- Private ---
+class NoSleep {
+    constructor() {
+        this._noSleep = true;
+        this._keepAwake();
+    }
+
+    stop(){
+      this._noSleep = false;
+    }
+    
+    async _keepAwake() {
+        while(this._noSleep) {
+            if (video) video.play();
+            await wait(10000);
+        }
+    }
+}
+
+function RunWithDisplayLock_click(){
+  WelcomeConfirmed = true;
+  refreshSite();  // Ansicht erneuern
+}
+
+function DisableDisplayLock_click(){
+    // Initialize video element
+    video = document.createElement("video");
+    video.setAttribute("playsinline", "");
+
+    // Add mp4 source
+    let source = document.createElement("source");
+    source.src = mp4Src;
+    source.type = "video/mp4";
+    video.append(source);
+
+    // Add webm source
+    source = document.createElement("source");
+    source.src = webmSrc;
+    source.type = "video/webm";
+    video.append(source);
+
+    // Play it as a result of user interaction
+    video.play();
+    activate();
+    WelcomeConfirmed = true;
+    refreshSite();  // Ansicht erneuern
+}
+
+function wait(milliseconds) {
+    return new Promise(resolve => setTimeout(resolve, milliseconds))
+}
+// Some fake viedos 10x10 1 frame
+const mp4Src = "data:video/mp4;base64,AAAAHGZ0eXBpc29tAAACAGlzb21pc28ybXA0MQAAAyBtb292AAAAbG12aGQAAAAAAAAAAAAAAAAAAAPoAAAAGwABAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAACSnRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAEAAAAAAAAAGwAAAAAAAAAAAAAAAQEAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAABoAAAgAAAEAAAAAAcJtZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAAKxEAAAEgFXEAAAAAAAxaGRscgAAAAAAAAAAc291bgAAAAAAAAAAAAAAAENvcmUgTWVkaWEgQXVkaW8AAAABaW1pbmYAAAAQc21oZAAAAAAAAAAAAAAAJGRpbmYAAAAcZHJlZgAAAAAAAAABAAAADHVybCAAAAABAAABLXN0YmwAAAB7c3RzZAAAAAAAAAABAAAAa21wNGEAAAAAAAAAAQAAAAAAAAAAAAIAEAAAAACsRAAAAAAAM2VzZHMAAAAAA4CAgCIAAQAEgICAFEAVAAAAAAJ/9wACf/cFgICAAhIQBoCAgAECAAAAFGJ0cnQAAAAAAAJ/9wACf/cAAAAgc3R0cwAAAAAAAAACAAAAAwAABAAAAAABAAAAgAAAABxzdHNjAAAAAAAAAAEAAAABAAAABAAAAAEAAAAkc3RzegAAAAAAAAAAAAAABAAAAXMAAAF0AAABcwAAAXQAAAAUc3RjbwAAAAAAAAABAAADTAAAABpzZ3BkAQAAAHJvbGwAAAACAAAAAf//AAAAHHNiZ3AAAAAAcm9sbAAAAAEAAAAEAAAAAQAAAGJ1ZHRhAAAAWm1ldGEAAAAAAAAAIWhkbHIAAAAAAAAAAG1kaXJhcHBsAAAAAAAAAAAAAAAALWlsc3QAAAAlqXRvbwAAAB1kYXRhAAAAAQAAAABMYXZmNTguNzYuMTAwAAAACGZyZWUAAAXWbWRhdCERRQAUUAFG//EKWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaXemCFLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS8IRFFABRQAUb/8QpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpd6aIUtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS8IRFFABRQAUb/8QpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpd6YIUtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLwhEUUAFFABRv/xClpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWl3pohS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLw="
+const webmSrc = "data:video/webm;base64,GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQRChYECGFOAZwEAAAAAAANXEU2bdLpNu4tTq4QVSalmU6yBoU27i1OrhBZUrmtTrIHYTbuMU6uEElTDZ1OsggE/TbuMU6uEHFO7a1OsggNB7AEAAAAAAABZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVSalmsirXsYMPQkBNgI1MYXZmNTguNzYuMTAwV0GNTGF2ZjU4Ljc2LjEwMESJiEBBAAAAAAAAFlSua+KuAQAAAAAAAFnXgQFzxYjHh4Jmxpm3C5yBACK1nIN1bmSGhkFfT1BVU1aqg2MuoFa7hATEtACDgQLhkZ+BArWIQOdwAAAAAABiZIEYY6KTT3B1c0hlYWQBAjgBgLsAAAAAABJUw2dB03NzAQAAAAAAAQ5jwIBnyAEAAAAAAAAVRaOLTUFKT1JfQlJBTkREh4RxdCAgZ8gBAAAAAAAAFEWjjU1JTk9SX1ZFUlNJT05Eh4EwZ8gBAAAAAAAAG0WjkUNPTVBBVElCTEVfQlJBTkRTRIeEcXQgIGfIAQAAAAAAABlFo4hUSU1FQ09ERUSHizAwOjAwOjAwOjAwZ8gBAAAAAAAAKkWjn0NPTS5BUFBMRS5RVUlDS1RJTUUuRElTUExBWU5BTUVEh4VlbXB0eWfIAQAAAAAAACRFo5lDT00uQVBQTEUuUVVJQ0tUSU1FLlRJVExFRIeFZW1wdHlnyAEAAAAAAAAaRaOHRU5DT0RFUkSHjUxhdmY1OC43Ni4xMDBzcwEAAAAAAACxY8CLY8WIx4eCZsaZtwtnyAEAAAAAAAAiRaOMSEFORExFUl9OQU1FRIeQQ29yZSBNZWRpYSBBdWRpb2fIAQAAAAAAABtFo4lWRU5ET1JfSUREh4xbMF1bMF1bMF1bMF1nyAEAAAAAAAAjRaOHRU5DT0RFUkSHlkxhdmM1OC4xMzQuMTAwIGxpYm9wdXNnyKJFo4hEVVJBVElPTkSHlDAwOjAwOjAwLjAzNDAwMDAwMAAAH0O2daTngQCjh4EAAID8//6gAQAAAAAAAA+hh4EAFQD8//51ooNwiJgcU7trkbuPs4EAt4r3gQHxggMY8IED"
 
 </script>
 </body>

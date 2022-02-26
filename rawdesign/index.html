@@ -318,6 +318,19 @@
   box-shadow: rgba(0, 0, 0, 0.75) 1.5em 0 0 0, rgba(0, 0, 0, 0.75) 1.1em 1.1em 0 0, rgba(0, 0, 0, 0.75) 0 1.5em 0 0, rgba(0, 0, 0, 0.75) -1.1em 1.1em 0 0, rgba(0, 0, 0, 0.75) -1.5em 0 0 0, rgba(0, 0, 0, 0.75) -1.1em -1.1em 0 0, rgba(0, 0, 0, 0.75) 0 -1.5em 0 0, rgba(0, 0, 0, 0.75) 1.1em -1.1em 0 0;
 }
 
+#RecNameBlock {
+	font-size: 32px;
+  font-weight: bold;
+  color: rgb(0, 0, 0);
+}
+
+#RecBeschreibungBlock {
+	font-size: 24px;
+  font-weight: bold;
+  color: rgb(0, 0, 0);
+}
+
+
 /* Animation */
 
 @-webkit-keyframes spinner {
@@ -410,7 +423,7 @@
     </table>
   </div> 
 
-  <div class="loading" id="LoadingAnimation">Loading&#8230;</div>
+<!--  <div class="loading" id="LoadingAnimation">Loading&#8230;</div>  -->
 
   <!-- Trapezsymbol: Wenn mit Maus da drüber gefahren wird, wird die Menüzeile aufgemacht-->
   <div class="trapezoid-down" id="MenuHook" ></div>
@@ -433,6 +446,7 @@
       </canvas>
       <p> <button id="btn_tarieren" class="button">Tarieren</button>
         <button id="btn_ok" class="button">OK</button>
+        <button id="btn_Recipes" class="button">Rezepte</button>
       </p>
     </div>
 
@@ -528,6 +542,72 @@
     </div>
 
   </div>
+
+  <div class="card" id="RecipeSelectDialog">
+    <div>
+      <span style="font-size:24px; font-weight: bold; color: rgb(0, 0, 0)" id="RHeader_Name">R E Z E P T E</span>
+    </div>
+    <hr>
+    <div style="height:500px; overflow:auto;" id="CollectionOfRecipeList">
+    </div>
+    <hr>
+    <button id="btn_Recipes_Back" class="button">&#8678; Zurück</button>
+    <button id="btn_Recipes_New" class="button">&#9733; Neu</button>
+  </div>  
+
+
+
+
+
+
+<!-- Configuration Dialog -->
+<div classe="card" id="RecipeEditorDialog">
+    <div>
+      <span class="h2">Rezept Editor</span>
+      <span class="save" id="x_btn_RecipeEditor">&#10008;</span>
+    </div>
+    <p></p>
+    <div style="height:500px; overflow:auto;">
+    <table width="100%">
+      <tr> <!-- Zeile 1: Name-->
+        <td style="font-size:22px" align="right" width="250px">Rezept Name</td>
+        <td align="left" >
+          <input style="font-size:22px" placeholder="Name" type="text" id="RE_iRezeptName" width="100%">
+        </td>
+      </tr>
+
+      <tr> <!-- Zeile 2: Beschreibung-->
+        <td style="font-size:22px" align="right">Beschreibung</td>
+        <td align="left">
+         <textarea style="font-size:22px" name="RE_iRezeptbeschreibung" id="" cols="40" rows="5"></textarea>
+        </td>
+      </tr>
+      
+      <tr><td colspan="2"><hr></td></tr>
+
+      <tr> <!-- Zeile 3: Aktivitätsliste-->
+        <td style="font-size:22px" valign=top align="right"></td>
+        <td align="left">
+          
+        </td>
+      </tr>      
+   </table>
+  <br>
+  <button style="font-size:32px" id="RE_btn_Save" class="Button">Save</button>
+  </div>
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
 
 <!-------------------------------------------------------------------------------------->
 <!-- Subdialoge ------------------------------------------------------------------------>
@@ -834,6 +914,22 @@
   window.addEventListener('resize', resizeCanvas, false);  // Wenn sich die Fenstergröße ändert, auch das Canvas ändern
 
   var WelcomeConfirmed = false;     // Wurde der Anmeldebildschirm schon bestätigt?
+
+  var Recipes = [{"name":"American Style Toastbrot",
+                  "beschreibung":"Glutenfreies Toastbrot. Dauer Zubereitung ca. 45min, Menge reicht für ca. 20 Scheiben",
+                  "id":0
+                  },
+                  {"name":"Brownies",
+                  "beschreibung":"Glutenfreie Brownies. Dauer Zubereitung ca. 30min, Menge reicht für ca. 9 Brownies",
+                  "id":0
+                  },
+                  {"name":"Neues Rezept",
+                  "beschreibung":"Erstelle ein neues Rezept",
+                  "id":0
+                  }
+                ];
+
+
 
   // Configurationswerte
   const configdata = {
@@ -1485,6 +1581,7 @@ function refreshSite() {
     document.getElementById("ComponentWeighingDialog").style.display = 'none';
     document.getElementById("CountScaleDialog").style.display = 'none';
     document.getElementById("CheckScaleDialog").style.display = 'none';  
+    document.getElementById("RecipeSelectDialog").style.display = 'none';
   } else{
     document.getElementById("WelcomeDialog").style.display = 'none';
     switch(Betriebsmodus) {
@@ -1492,7 +1589,8 @@ function refreshSite() {
         document.getElementById("StandardWeighingDialog").style.display = 'block';
         document.getElementById("ComponentWeighingDialog").style.display = 'none';
         document.getElementById("CountScaleDialog").style.display = 'none';
-        document.getElementById("CheckScaleDialog").style.display = 'none';  
+        document.getElementById("CheckScaleDialog").style.display = 'none';
+        document.getElementById("RecipeSelectDialog").style.display = 'none'; 
         StandardWeighing(); // Standardeinwaage neu zeichnen
         break;
       case 1: // Komponennteneinwaage
@@ -1500,6 +1598,7 @@ function refreshSite() {
         document.getElementById("ComponentWeighingDialog").style.display = 'block';
         document.getElementById("CountScaleDialog").style.display = 'none';
         document.getElementById("CheckScaleDialog").style.display = 'none'; 
+        document.getElementById("RecipeSelectDialog").style.display = 'none';
         ComponetWeighing(); // Komponenten Einwaage neu zeichnen
         break;
       case 2: // Zählmodus
@@ -1507,13 +1606,15 @@ function refreshSite() {
         document.getElementById("ComponentWeighingDialog").style.display = 'none';
         document.getElementById("CountScaleDialog").style.display = 'block';
         document.getElementById("CheckScaleDialog").style.display = 'none';
+        document.getElementById("RecipeSelectDialog").style.display = 'none';
         CountScale();  // Zählwaage zeichnen
         break;
         case 3: // Kontrollwaage
       document.getElementById("StandardWeighingDialog").style.display = 'none';
         document.getElementById("ComponentWeighingDialog").style.display = 'none';
         document.getElementById("CountScaleDialog").style.display = 'none';
-        document.getElementById("CheckScaleDialog").style.display = 'block'; 
+        document.getElementById("CheckScaleDialog").style.display = 'block';
+        document.getElementById("RecipeSelectDialog").style.display = 'none'; 
         CheckScale();  // Kontrollwaage zeichnen
         break;
       default:
@@ -1546,6 +1647,7 @@ function onLoad(event) {
   document.getElementById("ComponentWeighingDialog").style.display = 'none';
   document.getElementById("CountScaleDialog").style.display = 'none';
   document.getElementById("CheckScaleDialog").style.display = 'none'; 
+  document.getElementById("RecipeSelectDialog").style.display = 'none';
   initWebSocket();
   initButton();  
   //refreshSite(); // Es wird auf die configuration gewartet. Vorher wird ncihts angezeigt
@@ -1566,6 +1668,9 @@ function initButton() {
   // Buttons in Komponennten Dialog
   document.getElementById('btn_tarieren').addEventListener('click', tarieren_click);
   document.getElementById('btn_ok').addEventListener('click', ok_click);
+  document.getElementById('btn_Recipes').addEventListener('click', recipes_click); 
+  document.getElementById('btn_Recipes_Back').addEventListener('click', recipesback_click);
+  document.getElementById('btn_Recipes_New').addEventListener('click', newrecipe_click); 
 
   // Buttons aus Standard Dialog
   document.getElementById('std_btn_tarieren').addEventListener('click', std_tarieren_click);
@@ -1797,6 +1902,99 @@ function wait(milliseconds) {
 const mp4Src = "data:video/mp4;base64,AAAAHGZ0eXBpc29tAAACAGlzb21pc28ybXA0MQAAAyBtb292AAAAbG12aGQAAAAAAAAAAAAAAAAAAAPoAAAAGwABAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAACSnRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAEAAAAAAAAAGwAAAAAAAAAAAAAAAQEAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAABoAAAgAAAEAAAAAAcJtZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAAKxEAAAEgFXEAAAAAAAxaGRscgAAAAAAAAAAc291bgAAAAAAAAAAAAAAAENvcmUgTWVkaWEgQXVkaW8AAAABaW1pbmYAAAAQc21oZAAAAAAAAAAAAAAAJGRpbmYAAAAcZHJlZgAAAAAAAAABAAAADHVybCAAAAABAAABLXN0YmwAAAB7c3RzZAAAAAAAAAABAAAAa21wNGEAAAAAAAAAAQAAAAAAAAAAAAIAEAAAAACsRAAAAAAAM2VzZHMAAAAAA4CAgCIAAQAEgICAFEAVAAAAAAJ/9wACf/cFgICAAhIQBoCAgAECAAAAFGJ0cnQAAAAAAAJ/9wACf/cAAAAgc3R0cwAAAAAAAAACAAAAAwAABAAAAAABAAAAgAAAABxzdHNjAAAAAAAAAAEAAAABAAAABAAAAAEAAAAkc3RzegAAAAAAAAAAAAAABAAAAXMAAAF0AAABcwAAAXQAAAAUc3RjbwAAAAAAAAABAAADTAAAABpzZ3BkAQAAAHJvbGwAAAACAAAAAf//AAAAHHNiZ3AAAAAAcm9sbAAAAAEAAAAEAAAAAQAAAGJ1ZHRhAAAAWm1ldGEAAAAAAAAAIWhkbHIAAAAAAAAAAG1kaXJhcHBsAAAAAAAAAAAAAAAALWlsc3QAAAAlqXRvbwAAAB1kYXRhAAAAAQAAAABMYXZmNTguNzYuMTAwAAAACGZyZWUAAAXWbWRhdCERRQAUUAFG//EKWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaXemCFLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS8IRFFABRQAUb/8QpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpd6aIUtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS8IRFFABRQAUb/8QpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpd6YIUtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLwhEUUAFFABRv/xClpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWl3pohS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLw="
 const webmSrc = "data:video/webm;base64,GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQRChYECGFOAZwEAAAAAAANXEU2bdLpNu4tTq4QVSalmU6yBoU27i1OrhBZUrmtTrIHYTbuMU6uEElTDZ1OsggE/TbuMU6uEHFO7a1OsggNB7AEAAAAAAABZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVSalmsirXsYMPQkBNgI1MYXZmNTguNzYuMTAwV0GNTGF2ZjU4Ljc2LjEwMESJiEBBAAAAAAAAFlSua+KuAQAAAAAAAFnXgQFzxYjHh4Jmxpm3C5yBACK1nIN1bmSGhkFfT1BVU1aqg2MuoFa7hATEtACDgQLhkZ+BArWIQOdwAAAAAABiZIEYY6KTT3B1c0hlYWQBAjgBgLsAAAAAABJUw2dB03NzAQAAAAAAAQ5jwIBnyAEAAAAAAAAVRaOLTUFKT1JfQlJBTkREh4RxdCAgZ8gBAAAAAAAAFEWjjU1JTk9SX1ZFUlNJT05Eh4EwZ8gBAAAAAAAAG0WjkUNPTVBBVElCTEVfQlJBTkRTRIeEcXQgIGfIAQAAAAAAABlFo4hUSU1FQ09ERUSHizAwOjAwOjAwOjAwZ8gBAAAAAAAAKkWjn0NPTS5BUFBMRS5RVUlDS1RJTUUuRElTUExBWU5BTUVEh4VlbXB0eWfIAQAAAAAAACRFo5lDT00uQVBQTEUuUVVJQ0tUSU1FLlRJVExFRIeFZW1wdHlnyAEAAAAAAAAaRaOHRU5DT0RFUkSHjUxhdmY1OC43Ni4xMDBzcwEAAAAAAACxY8CLY8WIx4eCZsaZtwtnyAEAAAAAAAAiRaOMSEFORExFUl9OQU1FRIeQQ29yZSBNZWRpYSBBdWRpb2fIAQAAAAAAABtFo4lWRU5ET1JfSUREh4xbMF1bMF1bMF1bMF1nyAEAAAAAAAAjRaOHRU5DT0RFUkSHlkxhdmM1OC4xMzQuMTAwIGxpYm9wdXNnyKJFo4hEVVJBVElPTkSHlDAwOjAwOjAwLjAzNDAwMDAwMAAAH0O2daTngQCjh4EAAID8//6gAQAAAAAAAA+hh4EAFQD8//51ooNwiJgcU7trkbuPs4EAt4r3gQHxggMY8IED"
 
+
+
+///////////////////////////////////////////////////
+// Recipe Functions
+
+function recipes_click(){
+  document.getElementById("Menurow").style.display = "none"; // Menuzeile ausblenden
+  document.getElementById("ComponentWeighingDialog").style.display = 'none';
+  document.getElementById("RecipeSelectDialog").style.display = 'block';
+  createRecipeList();
+}
+
+function recipesback_click(){
+  var container = document.getElementById('CollectionOfRecipeList');
+
+  document.getElementById("Menurow").style.display = "none"; // Menuzeile ausblenden
+  document.getElementById("ComponentWeighingDialog").style.display = 'block';
+  document.getElementById("RecipeSelectDialog").style.display = 'none';
+  
+  while (container.firstChild) container.removeChild(container.firstChild);  // alle kinder des nodes entfernen
+}
+
+function newrecipe_click(){
+
+}
+
+function RecipeElementSelect(i){
+  var anz = document.getElementById('CollectionOfRecipeList').childElementCount;
+  
+  console.log("Anzahl: "+ anz + "  i="+ i);
+
+  for(var j=0; j<anz; j++) {
+    if(i == j) document.getElementById("RecipeListElm"+j).style.background="Lightslategray";
+    else document.getElementById("RecipeListElm"+j).style.background="Lightgray";
+  }
+
+}
+
+function RecipeElementEdit(i){
+  var obj = document.getElementById("RecipeListElm"+i);
+  console.log("Editieren("+i+"): Übergebenes Objekt: "+obj);
+}
+
+function RecipeElementRemove(i){
+  var obj = document.getElementById("RecipeListElm"+i);
+  console.log("Löschen("+i+"): Übergebenes Objekt: "+obj);
+
+  obj.parentNode.removeChild(obj);  // Aus der Liste entfernen
+}
+
+function createRecipeList(){
+  var i;
+  var AnzRecipes = Recipes.length;
+  var container = document.getElementById('CollectionOfRecipeList');
+
+  console.log("Anzahl Rezepte: " + AnzRecipes);
+
+  for(i=0; i< AnzRecipes; i++){
+
+    var newRecipeListDIV = document.createElement('div');
+    newRecipeListDIV.style = "margin-left:5px; margin-top:5px; margin-right:5px; background:Lightgray";
+    newRecipeListDIV.setAttribute('id', "RecipeListElm"+i);
+    newRecipeListDIV.setAttribute('onclick', "RecipeElementSelect("+i+")");
+  
+    var newElmName = document.createElement('p');
+    newElmName.style = "margin-left:5px; align:left; text-align:left; font-size:24px; font-weight:bold; color:rgb(0, 0, 0); display:inline";
+    newElmName.innerText = Recipes[i].name;
+
+    var newElmEditBtn = document.createElement('p');
+    newElmEditBtn.style = "margin-left:5px; font-size:24px; font-weight:bold; color:rgb(150, 150, 150); display:inline";
+    newElmEditBtn.innerHTML = "&#10000;";
+    newElmEditBtn.setAttribute('onclick', "RecipeElementEdit("+i+")");
+
+    var newElmRemoveBtn = document.createElement('p');
+    newElmRemoveBtn.style = "margin-left:5px; font-size:24px; font-weight:bold; color:rgb(150, 150, 150); display:inline";
+    newElmRemoveBtn.innerHTML = '&#128465;';
+    newElmRemoveBtn.setAttribute('onclick', "RecipeElementRemove("+i+")");
+    
+    var newElmBeschr = document.createElement('p');
+    newElmBeschr.style = "margin-left:5px; text-align:left; font-size:24px; color:rgb(50, 50, 50)";
+    newElmBeschr.innerText = Recipes[i].beschreibung;
+
+    // Zuerste die Elemente in das DIV einbauen...
+    newRecipeListDIV.appendChild(newElmName);
+    newRecipeListDIV.appendChild(newElmEditBtn);
+    newRecipeListDIV.appendChild(newElmRemoveBtn);
+    newRecipeListDIV.appendChild(newElmBeschr);
+    //... dann das DIV selber in das übergeordnete Dokument einhängen
+    container.appendChild(newRecipeListDIV);
+   
+  }
+
+}
 </script>
 </body>
 </html>

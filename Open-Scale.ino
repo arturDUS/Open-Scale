@@ -11,6 +11,8 @@
 #include <ESP8266WiFi.h>        // Load Wi-Fi library
 #include <Arduino_JSON.h>       // Process JSON Objects
 #include <vector>
+#include <SPI.h>
+#include <SD.h>
 
 #include "qrcodegen.hpp"
 using std::uint8_t;
@@ -65,7 +67,7 @@ typedef struct {
   char APgateway[15]="\0";     // gateway Ip address in accesspoint mode
   char APsubnetmask[15]="\0";// subnet mask in accesspoint mode
   char WiFiPWD[32]="\0";  // WiFi Passwort in Clientmode
-  uint8_t WiFiMode=0;                   // 0:Wifi not configured, 1:Wifi disabled on startup, 2: 1:Connect to existing WiFi, 2:Accesspoint mode
+  uint8_t WiFiMode=0;                   // 0:Wifi disabled on startup, 1:Connect to existing WiFi, 2:Accesspoint mode
   uint8_t Defaultmode=0;                // Default Mode to start with (0: Standard weighing, 1: Component weighing, 2:Count scale, 3:Check scale)
   float ScaleMaxRange=0;
   float ScaleSteps=0.1;
@@ -97,10 +99,9 @@ enum WEBCMD
 // Enummeration for WiFi Status
 enum WIFIStatus
 { DISABLED,
-  ENABLED, 
-  CONNECTED,
-  WEBSERVERACTIVE,
-  CLIENTCONNECTED
+  ENABLED,
+  APMODE,
+  WEBSERVERACTIVE
 } WiFiStatus;
 
 //////////////////////////////////////////////////////////////////////////
@@ -111,6 +112,7 @@ float Toleranz;
 float MaxWert;
 uint8_t NumberConnectedClients=0;  // Whenever a client connects increase the value, when a client disconnects decrease the value  
 
+const int chipSelect = 4;
 
 typedef std::vector<char*> words;
 words myWords;
@@ -143,6 +145,8 @@ void SetDefaultConfig(void);
 static void printQr(const QrCode &qr);
 static void CreateQRCode(String qrData);
 
+void printDirectory(File dir, int numTabs);
+void initSDCard(void);
 
 
 //////////////////////////////////////////////////////////////////////////
@@ -206,10 +210,29 @@ void setup() {
   display.clear();
   display.drawXbm(5, 5, Splash_width, Splash_height, Splash);
   display.display();
-  // Enable WIFI
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(settings.WiFiSSID, settings.WiFiPWD);   // Start WifiMode
-  WiFiStatus = ENABLED;                              // Wifi is enabled
+
+  switch(settings.WiFiMode)
+  { case 0:        // 0: Wifi disabled on startup,
+      WiFiStatus = DISABLED;           
+      break;
+    case 1:        // 2: Connect to existing WiFi,
+      WiFi.mode(WIFI_STA);
+      WiFi.begin(settings.WiFiSSID, settings.WiFiPWD);   // Start WifiMode
+      WiFiStatus = ENABLED;                              // Wifi is enabled but not connected to WIFI yet
+      break;
+    case 2:         // 3: Accesspoint mode
+      startAPMode();    // Accesspoint Mode starten
+      StartWebServer(); // Webserver starten
+      WiFiStatus = WEBSERVERACTIVE;
+      break;
+    default:        // All others treat as WifI not configured
+      break;
+  }
+  
+/*
+initSDCard();
+*/
+
   // Show Splash for 1 seconds
   while(getkey()!=0) delay(100);
   t = millis() + 1000;
@@ -225,32 +248,7 @@ void setup() {
 
 }
 
-void CheckWiFi(){
-  String temp;
-  
-  if(WiFi.status() != WL_CONNECTED)
-  { WiFiStatus = ENABLED; 
-  } else
-  { if(WiFiStatus < CONNECTED) {
-      temp = WiFi.localIP().toString();
-      Serial.print("WiFi connected. Scale IP-Address: "); Serial.println(temp);
-      strcpy(settings.IP, temp.c_str());
-      initWebSocket();
-      // Route for root / web page
-      server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-        request->send_P(200, "text/html", index_html, processor);
-      });
-      // Start webserver
-      server.begin();
-      WiFiStatus = WEBSERVERACTIVE;
-    } else {
-      // Webanfragen beantworten
-      ws.cleanupClients();
-      // If something has changed, that has to be transmitted
-      notifyClients();
-    }
-  } 
-}
+
 
 void loop() {
   long int r;
@@ -296,19 +294,25 @@ void loop() {
       for (iter = myWords.begin(); iter != myWords.end(); ++iter) {
               Serial.printf("%s ", *iter);
       }
-   
       break;
     case 3:
-      if(WiFiStatus == WEBSERVERACTIVE) CreateQRCode("http://"+WiFi.localIP().toString());
-      else {
+      if(settings.WiFiMode == 2) {  // Accesspoint Mode
+        CreateQRCode("http://"+ WiFi.softAPIP().toString());
+      } else if(WiFiStatus == WEBSERVERACTIVE) {
+        CreateQRCode("http://"+WiFi.localIP().toString());
+      } else {
         display.clear();
         display.setFont(ArialMT_Plain_24);
         display.drawString(0, 10, "WiFi not");
         display.drawString(0, 40, "connected");
         display.display();
+        delay(1500);  // Hinweis für 1,5s anzeigen
       }
       break;
     case 4:
+      if(settings.WiFiMode == 2) {  // Accesspoint Mode
+        CreateQRCode("WIFI:T:WPA;S:OSAP1;P:0p3n1234;;");  // QR Code um sich mit dem WiFi von der Waage im Accessmode zu verbinden
+      }
       break; 
     case 11:
       ConfigMenu(3);   // Configuration / Konfiguration
@@ -370,6 +374,7 @@ static void CreateQRCode(String qrData) {
 static void printQr(const QrCode &qr) {
   int border = 1;
   int xx, yy;
+  int ox, oy;
   uint8_t tempNClients=NumberConnectedClients;
 
   while(getkey()>0) delay(50); // Warten das die Taste losgelassen wird
@@ -378,11 +383,14 @@ static void printQr(const QrCode &qr) {
   display.fillRect(0, 0, 128, 64);
   display.setColor(BLACK);
 
+  ox = (128-qr.getSize()*2)/2;
+  oy = (64-qr.getSize()*2)/2;
+
   for (int y = 0; y < qr.getSize(); y++) {
     for (int x = 0; x < qr.getSize(); x++) {
        xx = x*2;
        yy = y*2;
-       if(qr.getModule(x, y)) display.fillRect(xx+35, yy+8, 2, 2);
+       if(qr.getModule(x, y)) display.fillRect(xx+ox, yy+oy, 2, 2);
     }
   }
   display.display();
@@ -392,7 +400,7 @@ static void printQr(const QrCode &qr) {
   display.setColor(WHITE);
 }
 
-
+// Sendet Änderungen vom Gewicht an die angekoppelten Clienten
 void notifyClients() {
   static sWIFIDATA oldvalue;
   char S[40];
@@ -472,50 +480,7 @@ void SendConfigOK() {
   ws.textAll(jsonString);
 }
 
-void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
-  AwsFrameInfo *info = (AwsFrameInfo*)arg;
-  if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
-    data[len] = '\0';
-    Serial.print("Länge Antwort:"); Serial.println(len);
-    Serial.print("Inhalt:"); Serial.println((char*)data);
-    if (strcmp((char*)data, "tare") == 0) {
-      WebCmd = TARE;
-      //notifyClients();
-    } else if (strcmp((char*)data, "cali") == 0) {
-      WebCmd = CALIBRATE;
-    } else {
-      // Schauen ob es ein JSON-String ist
-       JSONVar myObject = JSON.parse((char *)data);
-       if(myObject.hasOwnProperty("Type")) {
-         if(strcmp((const char*) myObject["Type"], "CONFIG") == 0) {
-          // Es ist ein JSON-String der die configuration enthaält.
-          if (myObject.hasOwnProperty("Name")) {strcpy(settings.Name, (const char*)myObject["Name"]);};
-          if (myObject.hasOwnProperty("SSID")) {strcpy(settings.WiFiSSID, (const char*)myObject["SSID"]); };
-          if (myObject.hasOwnProperty("APIP")) {strcpy(settings.APIP, (const char*)myObject["APIP"]);  };
-          if (myObject.hasOwnProperty("APgateway")) {strcpy(settings.APgateway, (const char*)myObject["APgateway"]);  };
-          if (myObject.hasOwnProperty("APsubnetmask")) {strcpy(settings.APsubnetmask, (const char*)myObject["APsubnetmask"]);  };
-          if (myObject.hasOwnProperty("PWD")) {
-            char pwd[32];
-            strcpy(pwd, (const char*)myObject["PWD"]);
-            if(strlen(pwd) > 4) {
-              // Es wurde ein neues Passwort empfangen
-              strcpy(settings.WiFiPWD, pwd);
-              Serial.print("Neues WiFi-Passwort gesetzt: "); Serial.println(pwd);
-              }
-            };
-          if (myObject.hasOwnProperty("WiFiMode")) {settings.WiFiMode = (int)myObject["WiFiMode"];};
-          if (myObject.hasOwnProperty("Defaultmode")) {settings.Defaultmode = (int)myObject["Defaultmode"];};
-          if (myObject.hasOwnProperty("ScaleMaxRange")) {settings.ScaleMaxRange = atof(myObject["ScaleMaxRange"]);};
-          if (myObject.hasOwnProperty("ScaleSteps")) {settings.ScaleSteps = atof(myObject["ScaleSteps"]);};
-          if (myObject.hasOwnProperty("ScaleTolerance")) {settings.ScaleTolerance = atof(myObject["ScaleTolerance"]);};  
-          if (myObject.hasOwnProperty("ScaleUnit")) {strcpy(settings.Unit, (const char*)myObject["ScaleUnit"]);};        
-          WriteSettings();  // Konfiguration in das EEPROm schreiben
-          SendConfigOK();   // Zurückmelden das die Konfiguration erfolgreich gespeichert wurde.
-         }
-       }  
-    }
-  }
-}
+
 
 // Loads the default values
 void SetDefaultConfig(void) {
@@ -524,7 +489,7 @@ void SetDefaultConfig(void) {
   strcpy(settings.APIP, "192.168.1.4\0");
   strcpy(settings.APgateway, "192.168.1.1\0");
   strcpy(settings.APsubnetmask, "255.255.255.0\0"); 
-  strcpy(settings.WiFiPWD, "\0");                   // In AP Mode no password is required.
+  strcpy(settings.WiFiPWD, "\0");                   // .
   settings.WiFiMode = 2;                            // Accesspoint Mode
   settings.Defaultmode = 0;                         // Standard Weighing
   settings.ScaleMaxRange = 1000;                    // 1000g Scale
@@ -533,68 +498,10 @@ void SetDefaultConfig(void) {
   strcpy(settings.Unit, "g\0");                     // Default Unit is g (gramms)
 }
 
-//////////////////////////////////////////////////////////////////////////////////
-// Siehe: https://github.com/me-no-dev/ESPAsyncWebServer
-// Unter dem Abschnitt "Async WebSocket Event"
-void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type,
-             void *arg, uint8_t *data, size_t len) {
-    switch (type) {
-      case WS_EVT_CONNECT:
-        Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
-        NumberConnectedClients++;  // notify that a client has connected
-        SendConfigToClient(); // Den Clienten die Konfiguration mitteilen
-        break;
-      case WS_EVT_DISCONNECT:
-        Serial.printf("WebSocket client #%u disconnected\n", client->id());
-        NumberConnectedClients--;
-        break;
-      case WS_EVT_DATA:
-        handleWebSocketMessage(arg, data, len);
-        break;
-      case WS_EVT_PONG:
-      case WS_EVT_ERROR:
-        break;
-  }
-}
 
 
-void startAPMode()
-{ IPAddress local_IP;
-  IPAddress gateway(192,168,4,9);
-  IPAddress subnet(255,255,255,0);
-
-  if(local_IP.fromString(settings.APIP)) {              // try to parse into the IPAddress
-    Serial.print("Setting soft-AP configuration ... ");
-    if(WiFi.softAPConfig(local_IP, gateway, subnet)){
-      Serial.println("Ready");
-      Serial.print("Setting soft-AP ... ");
-      if(WiFi.softAP(settings.Name)){                   // The configured scale name will be the accesspoint name
-        Serial.println("Ready");
-        Serial.print("Soft-AP IP address = "); Serial.println(WiFi.softAPIP());
-      } else {
-        Serial.println("Failed!");
-      }
-    } else {
-      Serial.println("Failed!");
-    }
-  } else {
-    Serial.println("unparsable IP");
-  }
-}
 
 
-void initWebSocket() {
-  ws.onEvent(onEvent);
-  server.addHandler(&ws);
-}
-
-String processor(const String& var){
-  Serial.println(var);
-  if(var == "STATE"){
-    // Nothing
-  }
-  return String();
-}
 
 uint8_t ConfigMenu(uint8_t s)
 { int m_TL;   // oberste Zeile im Display
@@ -679,7 +586,7 @@ uint8_t ConfigMenu(uint8_t s)
           settings.Defaultmode = ChoiceMenu(aConfigStdMode, 4, settings.Defaultmode, sConfigMenu[1]);
         break;
         case 2: //Wifi SSID
-          EnterText(6, 35, settings.WiFiSSID, 31, "ABCDEFGHIJKLMNOPQRSTUVWabcdefghijklmnopqrstuvwxyz_", sConfigMenu[2]).toCharArray(settings.WiFiSSID, 32);
+          EnterText(6, 35, settings.WiFiSSID, 31, "ABCDEFGHIJKLMNOPQRSTUVWabcdefghijklmnopqrstuvwxyz_", sConfigMenu[2]).toCharArray(settings.WiFiSSID, 32);        
         break;
         case 3: //Wifi Passwort
           EnterText(6, 35, settings.WiFiPWD, 31, "1234567890ABCDEFGHIJKLMNOPQRSTUVWabcdefghijklmnopqrstuvwxyz _<>|,.;:-#'+*!$%&/()=?^°@~{}", sConfigMenu[3]).toCharArray(settings.WiFiPWD, 32);
@@ -714,6 +621,7 @@ uint8_t ConfigMenu(uint8_t s)
     if(key==-1){ // kurzer roter Tastendruck (SAVE)
       WriteSettings(); // Werte speichern
       DisplaySaveOrCancel(1);
+      AskForReboot();
       return 0; // verlassen
     }
 
@@ -740,6 +648,22 @@ void DisplaySaveOrCancel(uint8_t s){
   display.display();
   
   while(getkey()>0 || millis()<timeout) delay(100); // Warten das die Taste losgelassen wird
+}
+
+void AskForReboot(void){
+  int8_t key;
+  
+  display.clear();
+  display.setFont(ArialMT_Plain_16);
+  display.drawString(0, 0, "Waage neu");
+  display.drawString(0, 20, "starten?");
+  display.setFont(ArialMT_Plain_10);
+  display.drawString(0, 40, "Zum Rebooten rote");
+  display.drawString(0, 50, "Taste drücken!");
+  display.display();
+  while(getkey()>0) delay(100); // Warten das die Taste losgelassen wird
+  while((key=getkey()) == 0) delay(50);
+  if(key==1) ESP.restart();   // bei langem roten Tastendruck rebooten
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1329,24 +1253,272 @@ void KalibrierMenu(void)
 
 
 
-/* 
- *  
- *  Backup of functions that have been changed ****
- *  
- *  
- *  
 
-// Creates a single QR Code, then prints it to the console.
-static void CreateQRCode(String qrData) {
-  const char *text = "http://192.168.178.48";       // User-supplied text
-  
-  qrData.toCharArray(buf,50); 
-  
-  const QrCode::Ecc errCorLvl = QrCode::Ecc::_LOW;  // Error correction level
-  
-  // Make and print the QR Code symbol
-  const QrCode qr = QrCode::encodeText(text, errCorLvl);
-  printQr(qr);
+/****************************************************************************************************************************************
+ ****************************************************************************************************************************************
+ * Netzwerk Funktionen
+ ****************************************************************************************************************************************
+ ****************************************************************************************************************************************/
 
+void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
+  AwsFrameInfo *info = (AwsFrameInfo*)arg;
+  if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
+    data[len] = '\0';
+    Serial.print("Länge Antwort:"); Serial.println(len);
+    Serial.print("Inhalt:"); Serial.println((char*)data);
+    if (strcmp((char*)data, "tare") == 0) {
+      WebCmd = TARE;
+      //notifyClients();
+    } else if (strcmp((char*)data, "cali") == 0) {
+      WebCmd = CALIBRATE;
+    } else {
+      // Schauen ob es ein JSON-String ist
+       JSONVar myObject = JSON.parse((char *)data);
+       if(myObject.hasOwnProperty("Type")) {
+         if(strcmp((const char*) myObject["Type"], "CONFIG") == 0) {
+          // Es ist ein JSON-String der die configuration enthaält.
+          if (myObject.hasOwnProperty("Name")) {strcpy(settings.Name, (const char*)myObject["Name"]);};
+          if (myObject.hasOwnProperty("SSID")) {strcpy(settings.WiFiSSID, (const char*)myObject["SSID"]); };
+          if (myObject.hasOwnProperty("APIP")) {strcpy(settings.APIP, (const char*)myObject["APIP"]);  };
+          if (myObject.hasOwnProperty("APgateway")) {strcpy(settings.APgateway, (const char*)myObject["APgateway"]);  };
+          if (myObject.hasOwnProperty("APsubnetmask")) {strcpy(settings.APsubnetmask, (const char*)myObject["APsubnetmask"]);  };
+          if (myObject.hasOwnProperty("PWD")) {
+            char pwd[32];
+            strcpy(pwd, (const char*)myObject["PWD"]);
+            if(strlen(pwd) > 4) {
+              // Es wurde ein neues Passwort empfangen
+              strcpy(settings.WiFiPWD, pwd);
+              Serial.print("Neues WiFi-Passwort gesetzt: "); Serial.println(pwd);
+              }
+            };
+          if (myObject.hasOwnProperty("WiFiMode")) {settings.WiFiMode = (int)myObject["WiFiMode"];};
+          if (myObject.hasOwnProperty("Defaultmode")) {settings.Defaultmode = (int)myObject["Defaultmode"];};
+          if (myObject.hasOwnProperty("ScaleMaxRange")) {settings.ScaleMaxRange = atof(myObject["ScaleMaxRange"]);};
+          if (myObject.hasOwnProperty("ScaleSteps")) {settings.ScaleSteps = atof(myObject["ScaleSteps"]);};
+          if (myObject.hasOwnProperty("ScaleTolerance")) {settings.ScaleTolerance = atof(myObject["ScaleTolerance"]);};  
+          if (myObject.hasOwnProperty("ScaleUnit")) {strcpy(settings.Unit, (const char*)myObject["ScaleUnit"]);};        
+          WriteSettings();  // Konfiguration in das EEPROm schreiben
+          SendConfigOK();   // Zurückmelden das die Konfiguration erfolgreich gespeichert wurde.
+         }
+       }  
+    }
+  }
 }
-*/
+
+
+//////////////////////////////////////////////////////////////////////////////////
+// Siehe: https://github.com/me-no-dev/ESPAsyncWebServer
+// Unter dem Abschnitt "Async WebSocket Event"
+void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type,
+             void *arg, uint8_t *data, size_t len) {
+    switch (type) {
+      case WS_EVT_CONNECT:
+        Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
+        NumberConnectedClients++;  // notify that a client has connected
+        SendConfigToClient(); // Den Clienten die Konfiguration mitteilen
+        break;
+      case WS_EVT_DISCONNECT:
+        Serial.printf("WebSocket client #%u disconnected\n", client->id());
+        NumberConnectedClients--;
+        break;
+      case WS_EVT_DATA:
+        handleWebSocketMessage(arg, data, len);
+        break;
+      case WS_EVT_PONG:
+      case WS_EVT_ERROR:
+        break;
+  }
+}
+
+
+void startAPMode()
+{ IPAddress local_IP;  //(192,168,4,10);  // Feste IP Adresse
+  IPAddress gateway(192,168,4,9);
+  IPAddress subnet(255,255,255,0);
+
+  if(local_IP.fromString(settings.APIP)) {              // try to parse into the IPAddress
+    Serial.print("Setting soft-AP configuration ... ");
+    if(WiFi.softAPConfig(local_IP, gateway, subnet)){
+      Serial.println("Ready");
+      Serial.print("Setting soft-AP ... ");
+      //if(WiFi.softAP("Scale1")){   // Name of the WiFi is "Scale"  settings.Name)){                   // The configured scale name will be the accesspoint name
+      if(WiFi.softAP("OSAP1", "0p3n1234")){   // Name of the WiFi is "Scale"  settings.Name)){                   // The configured scale name will be the accesspoint name
+        Serial.println("Ready");
+        Serial.print("Soft-AP IP address = "); Serial.println(WiFi.softAPIP());
+      } else {
+        Serial.println("Setup Failed!");
+      }
+    } else {
+      Serial.println("Config Failed!");
+    }
+
+  } else {
+    Serial.println("unparsable IP");
+  }
+}
+
+
+void initWebSocket() {
+  ws.onEvent(onEvent);
+  server.addHandler(&ws);
+}
+
+String processor(const String& var){
+  Serial.println(var);
+  if(var == "STATE"){
+    // Nothing
+  }
+  return String();
+}
+ 
+void CheckWiFi(){
+  //String temp;
+
+  if(WiFiStatus == ENABLED){  // Wifi ist an aber noch nicht verbunden
+    if(WiFi.status() == WL_CONNECTED){  // Prüfen ob schon verbunden
+      String temp = WiFi.localIP().toString();
+      Serial.print("WiFi connected. Scale IP-Address: "); Serial.println(temp);
+      strcpy(settings.IP, temp.c_str());
+      StartWebServer();
+      WiFiStatus = WEBSERVERACTIVE;
+    }
+  }
+  
+  if(WiFiStatus == WEBSERVERACTIVE) {
+    // Webanfragen beantworten
+    ws.cleanupClients();
+    // If something has changed, that has to be transmitted
+    notifyClients();
+  } 
+}
+
+// Starts the WebSocket Inteface and the WebServer itself
+void StartWebServer(void) {
+  initWebSocket();
+  // Route for root / web page
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send_P(200, "text/html", index_html, processor);
+  });
+  // Start webserver
+  server.begin();
+}
+
+
+
+
+/****************************************************************************************************************************************
+ ****************************************************************************************************************************************
+ * SD-Karten Funktionen
+ ****************************************************************************************************************************************
+ ****************************************************************************************************************************************/
+
+void initSDCard(void){
+  
+  Serial.print("\nInitializing SD card...");
+ 
+  // we'll use the initialization code from the utility libraries
+  // since we're just testing if the card is working!
+  if (!SD.begin(SS)) {
+    Serial.println("initialization failed. Things to check:");
+    Serial.println("* is a card inserted?");
+    Serial.println("* is your wiring correct?");
+    Serial.println("* did you change the chipSelect pin to match your shield or module?");
+    while (1);
+  } else {
+    Serial.println("Wiring is correct and a card is present.");
+  }
+ 
+  // print the type of card
+  Serial.println();
+  Serial.print("Card type:         ");
+  switch (SD.type()) {
+    case 0:
+      Serial.println("SD1");
+      break;
+    case 1:
+      Serial.println("SD2");
+      break;
+    case 2:
+      Serial.println("SDHC");
+      break;
+    default:
+      Serial.println("Unknown");
+  }
+ 
+  Serial.print("Cluster size:          ");
+  Serial.println(SD.clusterSize());
+  Serial.print("Blocks x Cluster:  ");
+  Serial.println(SD.blocksPerCluster());
+  Serial.print("Blocks size:  ");
+  Serial.println(SD.blockSize());
+ 
+  Serial.print("Total Blocks:      ");
+  Serial.println(SD.totalBlocks());
+  Serial.println();
+ 
+  Serial.print("Total Cluster:      ");
+  Serial.println(SD.totalClusters());
+  Serial.println();
+ 
+  // print the type and size of the first FAT-type volume
+  uint32_t volumesize;
+  Serial.print("Volume type is:    FAT");
+  Serial.println(SD.fatType(), DEC);
+ 
+  volumesize = SD.totalClusters();
+  volumesize *= SD.clusterSize();
+  volumesize /= 1000;
+  Serial.print("Volume size (Kb):  ");
+  Serial.println(volumesize);
+  Serial.print("Volume size (Mb):  ");
+  volumesize /= 1024;
+  Serial.println(volumesize);
+  Serial.print("Volume size (Gb):  ");
+  Serial.println((float)volumesize / 1024.0);
+ 
+  Serial.print("Card size:  ");
+  Serial.println((float)SD.size()/1000);
+ 
+  FSInfo fs_info;
+  SDFS.info(fs_info);
+ 
+  Serial.print("Total bytes: ");
+  Serial.println(fs_info.totalBytes);
+ 
+  Serial.print("Used bytes: ");
+  Serial.println(fs_info.usedBytes);
+ 
+  File dir =  SD.open("/");
+ // printDirectory(dir, 0);
+ 
+}
+ 
+void printDirectory(File dir, int numTabs) {
+  while (true) {
+ 
+    File entry =  dir.openNextFile();
+    if (! entry) {
+      // no more files
+      break;
+    }
+    for (uint8_t i = 0; i < numTabs; i++) {
+      Serial.print('\t');
+    }
+    Serial.print(entry.name());
+    if (entry.isDirectory()) {
+      Serial.println("/");
+      printDirectory(entry, numTabs + 1);
+    } else {
+      // files have sizes, directories do not
+      Serial.print("\t\t");
+      Serial.print(entry.size(), DEC);
+      time_t cr = entry.getCreationTime();
+      time_t lw = entry.getLastWrite();
+      struct tm * tmstruct = localtime(&cr);
+      Serial.printf("\tCREATION: %d-%02d-%02d %02d:%02d:%02d", (tmstruct->tm_year) + 1900, (tmstruct->tm_mon) + 1, tmstruct->tm_mday, tmstruct->tm_hour, tmstruct->tm_min, tmstruct->tm_sec);
+      tmstruct = localtime(&lw);
+      Serial.printf("\tLAST WRITE: %d-%02d-%02d %02d:%02d:%02d\n", (tmstruct->tm_year) + 1900, (tmstruct->tm_mon) + 1, tmstruct->tm_mday, tmstruct->tm_hour, tmstruct->tm_min, tmstruct->tm_sec);
+    }
+    entry.close();
+  }
+}

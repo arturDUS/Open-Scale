@@ -10,7 +10,7 @@
 struct sMaterial {
   uint8_t number;
   char description[20];
-  float density;
+  double density;
   char uom[5];
 };
 
@@ -19,8 +19,8 @@ struct sMbrBomPos {
   uint8_t bompos;
   uint8_t materialnumber;
   char property[20];      // additinal property of the material e.g. warm, hot, clean, ....
-  float quantity;
-  float tolerance;
+  double quantity;
+  double tolerance;
 };
 
 struct sActivity {
@@ -29,7 +29,7 @@ struct sActivity {
   uint8_t activitytype;
   uint8_t parameter1;
   uint8_t parameter2;
-  float parameter3;
+  double parameter3;
   uint8_t outputmat;
   char activity[80];
   uint8_t activitystatus;
@@ -47,9 +47,9 @@ struct sRecipeBomElement {
   uint8_t recipe;
   uint8_t bompos;
   char name[MAX_NAME_LENGTH];
-  float quantity;
-  float density;
-  float tolerance;
+  double quantity;
+  double density;
+  double tolerance;
   char unit[5];
 };
 

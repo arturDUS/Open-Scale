@@ -10,11 +10,9 @@
 #include "OLEDDisplayUi.h"      // Include the UI lib
 #include <ESP8266WiFi.h>        // Load Wi-Fi library
 #include <Arduino_JSON.h>       // Process JSON Objects
-#include <vector>               
+#include <vector>
 #include <SPI.h>
 #include <SD.h>
-#include <queue>
-#include "MappingTables.h"
 
 #include "qrcodegen.hpp"
 using std::uint8_t;
@@ -39,8 +37,6 @@ using qrcodegen::QrSegment;
 // Website
 #include "index.h"
 ////////////////////////////////////
-
-#define TIMEOUTTIME 120000  // Timeout = 2 Minuten. danach wird abgeschaltet
 
 // Klassen definieren
 // Initialize the OLED display using Arduino Wire:
@@ -73,11 +69,11 @@ typedef struct {
   char WiFiPWD[32]="\0";  // WiFi Passwort in Clientmode
   uint8_t WiFiMode=0;                   // 0:Wifi disabled on startup, 1:Connect to existing WiFi, 2:Accesspoint mode
   uint8_t Defaultmode=0;                // Default Mode to start with (0: Standard weighing, 1: Component weighing, 2:Count scale, 3:Check scale)
-  double ScaleMaxRange=0;
-  double ScaleSteps=0.1;
-  double ScaleTolerance=10;
+  float ScaleMaxRange=0;
+  float ScaleSteps=0.1;
+  float ScaleTolerance=10;
   char Unit[5] = "g\0";
-  double Kalibrierwert;                  // Wird nur für die Kalibrierung benötigt
+  float Kalibrierwert;                  // Wird nur für die Kalibrierung benötigt
 } TSettings;                            // Länge
 TSettings settings;                     // Gesamtlänge: 193 Byte ACHTUNG! Maximal 255Byte!!
 
@@ -110,12 +106,11 @@ enum WIFIStatus
 
 //////////////////////////////////////////////////////////////////////////
 // Globale Variablen
-double SollWert;
-double IstWert;
-double Toleranz;
-double MaxWert;
+float SollWert;
+float IstWert;
+float Toleranz;
+float MaxWert;
 uint8_t NumberConnectedClients=0;  // Whenever a client connects increase the value, when a client disconnects decrease the value  
-long InputTimeout;
 
 const int chipSelect = 8;
 
@@ -124,27 +119,13 @@ words myWords;
 words::iterator iter;
 
 struct sWIFIDATA {
-  double Actual;      // Scale reading (after taring)
-  double Set;         // Target value for weighing
-  double Tolerance;   // Tolerance value for the actual weighing
-  double MaxWeighing; // The maximum weighing value of the scale
+  float Actual;      // Scale reading (after taring)
+  float Set;         // Target value for weighing
+  float Tolerance;   // Tolerance value for the actual weighing
+  float MaxWeighing; // The maximum weighing value of the scale
   uint8_t Button;    // Pressed Button on the scale
   uint8_t Mode;      // The current weighing mode
 } value;
-
-
-typedef struct sCoordinates {
-  uint8_t x;
-  uint8_t y;
-};
-
-typedef struct sStartEndCoordinates {
-  uint16_t Sx;
-  uint16_t Sy;
-  uint16_t Ex;
-  uint16_t Ey; 
-};
-
 
 //////////////////////////////////////////////////////////////////////////
 // Funktionsprototypen
@@ -152,21 +133,15 @@ int8_t getkey(void);  // Ließt den AD-Wandler aus und gibt zurück welche Taste
 void ReadSettings(void);
 void WriteSettings(void);
 void KalibrierMenu(void);
-void drawWeighingBar(int posy, double min, double max, double akt);
-void RangeBar(int posy, double min, double max, double akt);
-double EnterNumber(char x, char y, double NumberMin, double NumberMax, char d, double v, String Beschreibung);
-String EnterText(int x, int y, String t, uint8_t lMax, String ac, String Beschreibung);
+void drawWeighingBar(int posy, float min, float max, float akt);
+void RangeBar(int posy, float min, float max, float akt);
+float EnterValueF(char x, char y, float NumberMin, float NumberMax, char d, float v, String Beschreibung);
+double EnterValueD(char x, char y, double NumberMin, double NumberMax, char d, double v, String Beschreibung);
 uint8_t ConfigMenu(uint8_t s);
 void CheckWiFi(void);
 void startAPMode(void);
 void SendConfigToClient(void);
 void SetDefaultConfig(void);
-void ShutDownOrNot(void);
-void floodFill(uint8_t x, uint8_t y, bool newColor);
-sStartEndCoordinates Kreisbogen(uint8_t x, uint8_t y, uint8_t radius, uint16_t startw, uint16_t endw);
-void Kreisausschnitt(uint8_t x, uint8_t y, uint8_t radius, uint16_t startw, uint16_t endw);
-void Kreisringsektor(uint8_t x, uint8_t y, uint8_t rInnen, uint8_t rAussen, uint16_t startw, uint16_t endw);
-void Kreisskala(uint8_t x, uint8_t y, uint16_t w, uint8_t r1, uint8_t r2);
 
 static void printQr(const QrCode &qr);
 static void CreateQRCode(String qrData);
@@ -201,9 +176,6 @@ void setup() {
 
   // Waagensensor konfigurieren und starten
   scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
-  scale.set_gain(128);  // INPUT A with gain 128 (is also default value)
-  //scale.set_gain(64);   // INPUT A with gain 64
-  //scale.set_gain(32);   // INPUT B with fixed gain of 32
 
   display.flipScreenVertically();
 
@@ -222,12 +194,12 @@ void setup() {
 
   // Konfiguration aus EEPROM Auslesen. Wenn initial dann die Standard Konfiguration laden
   ReadSettings();
-  if(strcmp(settings.ConfState, "V02")!=0)    // Der Wert muss bei jeder Konfigurationserweiterung (zusätzliches Feld) geändert werden!!!!!!!!!
+  if(strcmp(settings.ConfState, "V01")!=0)    // Der Wert muss bei jeder Konfigurationserweiterung (zusätzliches Feld) geändert werden!!!!!!!!!
   {  SetDefaultConfig();                      // Defaultwerte setzen
-     strcpy(settings.ConfState, "V02\0");
+     strcpy(settings.ConfState, "V01\0");
      ConfigMenu(1);                           // Konfigurationsmenü aufrufen
      WriteSettings();                         // Konfiguration in das EPROM schreiben
-     Serial.println("Standardkonfiguration gespeichert!");
+     Serial.println("Standradkonfiguration gespeichert!");
   }
   
   scale.set_scale(settings.Kalibrierwert);  // Kalibrierwert auslesen
@@ -278,14 +250,12 @@ initSDCard();
   display.display();
   scale.tare();   // Execute the scale tareing
 
-  InputTimeout = millis() + TIMEOUTTIME;
-
 }
 
 
 void loop() {
   long int r;
-  double G, oldG;
+  float G, oldG;
   int8_t t;  // Taste die gedrückt wurde
   uint16_t i;
   uint8_t v;
@@ -656,13 +626,13 @@ uint8_t ConfigMenu(uint8_t s)
           settings.WiFiMode = ChoiceMenu(sConfigWiFiModes, 3, settings.WiFiMode, sConfigMenu[5]);
         break;
         case 6: //Scale Max Range
-          settings.ScaleMaxRange = EnterNumber(0, 35, 0, 50000, 0, settings.ScaleMaxRange, sConfigMenu[6]);
+          settings.ScaleMaxRange = EnterValueF(0, 35, 0, 50000, 0, settings.ScaleMaxRange, sConfigMenu[6]);
         break;
         case 7: //Scale Steps
-          settings.ScaleSteps = EnterNumber(0, 35, 0.001, 10, 3, settings.ScaleSteps, sConfigMenu[7]);
+          settings.ScaleSteps = EnterValueF(0, 35, 0.001, 10, 3, settings.ScaleSteps, sConfigMenu[7]);
         break;
         case 8: //Scale Tolerance
-          settings.ScaleTolerance = EnterNumber(0, 35, 0, 100, 1, settings.ScaleTolerance, sConfigMenu[8]);
+          settings.ScaleTolerance = EnterValueF(0, 35, 0, 100, 1, settings.ScaleTolerance, sConfigMenu[8]);
         break;
         case 9: //Scale Unit
           EnterText(6, 35, settings.Unit, 3, "ABCDEFGHIJKLMNOPQRSTUVWabcdefghijklmnopqrstuvwxyz/", sConfigMenu[9]).toCharArray(settings.Unit, 5);
@@ -837,7 +807,7 @@ uint8_t ChoiceMenu(const char(* List)[14], uint8_t Anz, uint8_t selected, String
 // Anzahl Dezimalstellen: d
 // aktueller Wert: v
 /////////////////////////////////////////////////////////
-double EnterNumber(int x, int y, double NumberMin, double NumberMax, int d, double v, String Beschreibung)
+double EnterValueD(int x, int y, double NumberMin, double NumberMax, int d, double v, String Beschreibung)
 { char back=0;            // 0: Editieren, 1:verwerfen und abbrechen, 2:speichern und übernehmen
   const String ac="0123456789.-+"; // erlaubte Zeichen
   int i, p, tmp;
@@ -953,11 +923,8 @@ double EnterNumber(int x, int y, double NumberMin, double NumberMax, int d, doub
     display.display();  // Jetzt alles zeichnen
 
     // Tasten auswerten
-    key=getkey();
-    while(key>0 && key<10){
-      key=getkey();
-      delay(50); 
-    }
+    while(getkey()>0) delay(50); // Warten das die Taste losgelassen wird
+    while((key=getkey()) == 0) delay(50);
 
     // Zeichenindex der aktuellen
     if(CursorPosString >= 0){ // Sind wir nicht in der Zurück-Auswahl
@@ -1017,8 +984,8 @@ double EnterNumber(int x, int y, double NumberMin, double NumberMax, int d, doub
         
       T = ((CursorPosString>0)?T.substring(0, CursorPosString):"") + ((i!=-1)?ac.substring(i,i+1):"") + T.substring(CursorPosString+1);
           
-      // Langer, roter Tastendruck löscht das Zeichen an der aktuellen Position 
-      if(key == 11){
+      // Langer, schwarzer Tastendruck ([-]-Taste)löscht das Zeichen an der aktuellen Position 
+      if(key == 12){
         if(lString>0){ // Es kann nur was gelöscht werden wenn der String länger als 0 Zeichen ist
           T = ((CursorPosString>0)?T.substring(0, CursorPosString):"") + ((CursorPosString<lString)?T.substring(CursorPosString+1):"");
           //if(--CursorPosString < 0) CursorPosString=0;
@@ -1026,36 +993,28 @@ double EnterNumber(int x, int y, double NumberMin, double NumberMax, int d, doub
         }
       }
       
-      // Langer, blauer Tastendruck fügt ein Zeichen an der aktuellen Position ein 
-      if(key == 14) {
+      // Langer, schwarzer Tastendruck ([+]-Taste) fügt ein Zeichen an der aktuellen Position ein 
+      if(key == 13) {
           T = ((CursorPosString>0)?T.substring(0, CursorPosString):"") + ac.substring(0,1) + ((CursorPosString<lString)?T.substring(CursorPosString):"");
       }
     }
-
-    if(CursorPosString<0) {
-      // Wenn die rote Taste in der OK/Verw auswahl gedrückt wird dann entsprechend zurück gehen
-      // Blaue Taste zum selektieren der Zurückbedingung
-      if(key==-1){
-        if(CursorPosString == -2) back = 1;  // Änderungen verwerfen
-        if(CursorPosString == -1) back = 2;  // Wert übernehmen  
-      }
-      // Wenn die blaue Taste in der OK/Verw Auswahl gedrückt wird wieder zurück in den String springen
-      if(key==-4){
-        CursorPosString = 0;
-      }
-    } else {
-      // <Blaue> Taste: durch die Stellen nach rechts rotieren
-      if(key == -4){ // nach rechts nach kurzem Tastendruck (beim loslassen)  
-        if(++CursorPosString > lString) CursorPosString=0; // Von Vorne anfangen AP:01032022 Letzte Position ist zum neu einfügen     //if(++CursorPosString >= lString) CursorPosString=0; // Von Vorne anfangen
-        if(CursorPosString < 0) CursorPosString=0;
-      }
-      // <Rote> Taste: durch die Stellen nach links rotieren
-      if(key == -1){
-        if(CursorPosString < 0) CursorPosString=lString-1; // Wenn man in der Auswahl OK/Verw. ist und nochmal links gedrückt wird, ans Ende springen
-        else --CursorPosString;  
-      }
+    
+    // <Blaue> Taste: durch die Stellen nach rechts rotieren
+    if(key == -4){ // nach rechts nach kurzem Tastendruck (beim loslassen)  
+      if(++CursorPosString > lString) CursorPosString=0; // Von Vorne anfangen AP:01032022 Letzte Position ist zum neu einfügen     //if(++CursorPosString >= lString) CursorPosString=0; // Von Vorne anfangen
+      if(CursorPosString < 0) CursorPosString=0;
     }
 
+    // <Rote> Taste: durch die Stellen nach links rotieren
+    if(key == -1){
+      if(CursorPosString < 0) CursorPosString=lString-1; // Wenn man in der Auswahl OK/Verw. ist und nochmal links gedrückt wird, ans Ende springen
+      else --CursorPosString;  
+    }
+
+    if((key == 11 || key==14)&& (CursorPosString < 0)){
+      if(CursorPosString == -2) back = 1;  // Änderungen verwerfen
+      if(CursorPosString == -1) back = 2;  // Wert übernehmen      
+    }
   }
   
   if(back == 1) return v;
@@ -1168,12 +1127,9 @@ String EnterText(int x, int y, String t, uint8_t lMax, String ac, String Beschre
     display.display();  // Jetzt alles zeichnen
 
     // Tasten auswerten
-    key=getkey();
-    while(key>0 && key<10){
-      key=getkey();
-      delay(50); 
-    }
-    
+    while(getkey()>0) delay(50); // Warten das die Taste losgelassen wird
+    while((key=getkey()) == 0) delay(50);
+
     // Zeichenindex der aktuellen
     if(CursorPosString >= 0){ // Sind wir nicht in der Zurück-Auswahl
       if(CursorPosString<lString){ 
@@ -1182,7 +1138,7 @@ String EnterText(int x, int y, String t, uint8_t lMax, String ac, String Beschre
     }
     
     // <Schwarze> Tasten: Zeichen an der aktuellen Position ändern
-    if(key == -2 || key == 22){   
+    if(key == -2){   
       if(CursorPosString < 0) {
         if(CursorPosString==-1) CursorPosString=-2;
         else CursorPosString=-1;
@@ -1191,7 +1147,7 @@ String EnterText(int x, int y, String t, uint8_t lMax, String ac, String Beschre
         i = (--i>=0)?i:ac.length()-1;   // [-] Taste
       }
     }
-    if(key == -3 || key == 23){ 
+    if(key == -3){ 
       if(CursorPosString < 0) {
         if(CursorPosString==-1) CursorPosString=-2;
         else CursorPosString=-1;
@@ -1205,8 +1161,8 @@ String EnterText(int x, int y, String t, uint8_t lMax, String ac, String Beschre
       // Jetzt den String neu zusammen bauen
       T = ((CursorPosString>0)?T.substring(0, CursorPosString):"") + ((i!=-1)?ac.substring(i,i+1):"") + T.substring(CursorPosString+1);
     
-      // Langer, roter Tastendruck löscht das Zeichen an der aktuellen Position 
-      if(key == 11){
+      // Langer, schwarzer Tastendruck ([-]-Taste)löscht das Zeichen an der aktuellen Position 
+      if(key == 12){
         if(lString>0){ // Es kann nur was gelöscht werden wenn der String länger als 0 Zeichen ist
           T = ((CursorPosString>0)?T.substring(0, CursorPosString):"") + ((CursorPosString<lString)?T.substring(CursorPosString+1):"");
           //if(--CursorPosString < 0) CursorPosString=0;
@@ -1215,35 +1171,28 @@ String EnterText(int x, int y, String t, uint8_t lMax, String ac, String Beschre
       }
       
       // Langer, schwarzer Tastendruck ([+]-Taste) fügt ein Zeichen an der aktuellen Position ein 
-      if(key == 14) {
+      if(key == 13) {
         if(lString<lMax){ // Es können nur Zeichen eingefügt werden wenn der String noch nicht seine maximale Länge hat.
           T = ((CursorPosString>0)?T.substring(0, CursorPosString):"") + ac.substring(0,1) + ((CursorPosString<lString)?T.substring(CursorPosString):"");
         }
       }
     }
+    
+    // <Blaue> Taste: durch die Stellen nach rechts rotieren
+    if(key == -4){ // nach rechts nach kurzem Tastendruck (beim loslassen)  
+      if(++CursorPosString > lString) CursorPosString=0; // Von Vorne anfangen AP:01032022 Letzte Position ist zum neu einfügen     //if(++CursorPosString >= lString) CursorPosString=0; // Von Vorne anfangen
+      if(CursorPosString < 0) CursorPosString=0;
+    }
 
-    if(CursorPosString<0) {
-      // Wenn die rote Taste in der OK/Verw auswahl gedrückt wird dann entsprechend zurück gehen
-      // Blaue Taste zum selektieren der Zurückbedingung
-      if(key==-1){
-        if(CursorPosString == -2) back = 1;  // Änderungen verwerfen
-        if(CursorPosString == -1) back = 2;  // Wert übernehmen  
-      }
-      // Wenn die blaue Taste in der OK/Verw Auswahl gedrückt wird wieder zurück in den String springen
-      if(key==-4){
-        CursorPosString = 0;
-      }    
-    } else {
-      // <Blaue> Taste: durch die Stellen nach rechts rotieren
-      if(key == -4){ // nach rechts nach kurzem Tastendruck (beim loslassen)  
-        if(++CursorPosString > lString) CursorPosString=0; // Von Vorne anfangen AP:01032022 Letzte Position ist zum neu einfügen     //if(++CursorPosString >= lString) CursorPosString=0; // Von Vorne anfangen
-        if(CursorPosString < 0) CursorPosString=0;
-      }
-      // <Rote> Taste: durch die Stellen nach links rotieren
-      if(key == -1){
-        if(CursorPosString < 0) CursorPosString=lString-1; // Wenn man in der Auswahl OK/Verw. ist und nochmal links gedrückt wird, ans Ende springen
-        else --CursorPosString;  
-      }
+    // <Rote> Taste: durch die Stellen nach links rotieren
+    if(key == -1){
+      if(CursorPosString < 0) CursorPosString=lString-1; // Wenn man in der Auswahl OK/Verw. ist und nochmal links gedrückt wird, ans Ende springen
+      else --CursorPosString;  
+    }
+
+    if((key == 11 || key==14)&& (CursorPosString < 0)){
+      if(CursorPosString == -2) back = 1;  // Änderungen verwerfen
+      if(CursorPosString == -1) back = 2;  // Wert übernehmen      
     }
   }
   
@@ -1251,11 +1200,168 @@ String EnterText(int x, int y, String t, uint8_t lMax, String ac, String Beschre
   else return T;
 }
 
+/////////////////////////////////////////////////////////
+// Stellt eine Funktion zur eingabe von Dezimalzahlen mit 4 Tastern bereit
+// Parameter
+// Position im Display (x,y)
+// kleinster Wert: NumberMin
+// größter Wert: NumberMax
+// Anzahl Dezimalstellen: d
+// aktueller Wert: v
+/////////////////////////////////////////////////////////
+float EnterValueF(int x, int y, float NumberMin, float NumberMax, int d, float v, String Beschreibung)
+{ char back=0;      // 0: Editieren, 1:abbrechen, 2:speichern und übernehmen
+  int lMax=0;       // Länge des Strings: Ganzzahl + Komma + Nachkommazahl = Länge des Strings
+  int ld=0;         // Anzahl Dezimalstellen
+  int ldg=0;        // 
+  int i, p, SP;
+  int8_t t;           // Tasten
+  float V = v;      // Neuer, editierter Wert
+  long prev;
+  long NMax = abs((long)NumberMax);
+  int neg=0;        // Sind auch negative zahlen erlaubt? (0: nein, 1: ja)
+  char S[30];       // Enthällt die einzelnen Stellen der Zahl
+  //char *pS;
+  int PosCursor=0;  // Position vom Cursor
+  long ToggleTime=0; // millis() zum umschalten der Blinkanzeige
+  char DisplayNumber=1; // Muss das ins Display geschrieben werden?
+
+  //Serial.println();
+  //Serial.println();
+  // Dezimale Ganzzahlen herausfinden
+  while(NMax > 0)
+  { NMax = NMax / 10;
+    lMax++;
+  }
+  //Serial.print("Anzahl Ganzzahlen Max:"); Serial.println(lMax);  // Debugausgabe
+
+  ldg=lMax;
+  // Nachkommazahlen herausfinden (inkl. Komma)
+  if(d>0) lMax = 1 + lMax + d;
+    
+  // Werden auch negative Zahlen eingegeben?
+  if(NumberMin<0)
+  { lMax = 1 + lMax;  //Ja, auch neagitve Zahlen
+    neg = 1;
+  }
+  // Serial.print("Anzahl Stellen Max:"); Serial.println(lMax);  // Debugausgabe
+  // in lMAX steht jetzt die maximale Anzahl an Stellen. Die kann nun zum ausgeben der einzelnen Zeichen genutzt werden
+
+  while(getkey()!=0) delay(100); // Warten das die Taste losgelassen wird
+  
+  // solange im Edit Modus bleiben bis zurück gegangen werden soll
+  while(!back)
+  { prev = abs((long)V);
+    // Werte der aktuellen Zahl ermitteln
+    // Anzahl Stellen Dezimale Ganzzahlen herausfinden
+    ld=0;
+    while(prev > 0)
+    { prev = prev / 10;
+      ld++;
+    }
+    //Serial.print("Anzahl Ganzzahlen Akt:"); Serial.println(ld);  // Debugausgabe
+    
+    display.clear();
+    display.setFont(ArialMT_Plain_16);
+    display.drawString(0,0, Beschreibung);
+    display.drawHorizontalLine(0, 18, 128);
+    display.setFont(DialogInput_plain_24);
+    // jetzt die einzelnen Stellen im Displaybereich ausgeben
+    // Zahl in die Stellen aufteilen
+    i=0;
+    SP=0;  // Position im String
+    if(neg==1){ 
+      S[SP++] = (V<0)?'-':'+';                    // Wenn eine negative Zahl eingegeben werden kann auch dsa Vorzeichen darstellen
+    }
+    ld = lMax - d - 1 - ld - ((neg==1 && d>0)?1:0);// Anzahl aufzufüllender 0en berechnen
+    //Serial.print("Anzahl Aufzufüllender 0en:"); Serial.println(ld);  // Debugausgabe
+    while(ld-->0) S[SP++] = '0';                  // Führende 0 en eintragen (String mit '0' auffüllen)
+    if(d>0) dtostrf(abs(V), ldg, d, &S[SP]);      // Zahl in String umwandeln: bei Dezimalzahl
+    else itoa(abs(V), &S[SP], 10);                // Zahl in String umwandeln: bei Ganzzahl
+    S[lMax]='\0';                                 // String abschließen
+    //Serial.print("Resultierender String:"); Serial.println(S);  // Debugausgabe
+
+    // Jetzt die Zahl im Display ausgeben
+    p = x;                                        // Erste X-Position
+    for(i=0; i<lMax; i++)
+    { if(DisplayNumber==1)                        // Wenn die Zahl angezeigt werden soll (Blinken)
+      { if(i == PosCursor)
+        { display.fillRect(p, y, 14, 31);
+          display.setColor(BLACK);
+          display.drawString(p, y, (String)S[i]);     // Stelle i ausgeben 
+          display.setColor(WHITE);
+        } else
+        { display.drawString(p, y, (String)S[i]);     // Stelle i ausgeben 
+        }
+      }
+      // Anwelcher Position kommt das nächste Zeichen?
+      p=p+15;                                         // Zeichenabstand für Zahlen
+    }    
+
+    // Tasten auswerten
+    t = getkey();
+
+    // wenn ich mich an einer Zahlen-Stellel befinde, mit hoch und runter den Wert ändern
+    if(S[PosCursor] != '-' &&
+       S[PosCursor] != '+' &&
+       S[PosCursor] != '.')
+    { ld = S[PosCursor]-48;  // ASCII 48 = '0'
+      if(t == 2)
+      { if(ld < 9) ld++;
+        else ld=0;
+      }
+      if(t == 3)
+      { if(ld > 0) ld--;
+        else ld=9;
+      }
+      S[PosCursor] = ld+48;  // ASCII 48 = '0'
+    }
+
+    // Befinde ich mich beim Vorzeichen, dann bei Tastendruck (hoch/runter) das Vorzeichen ändern
+    if(S[PosCursor] == '-' && (t==2 || t==3))
+      S[PosCursor] = '+';
+    else if(S[PosCursor] == '+' && (t==2 || t==3))
+      S[PosCursor] = '-';
+
+    // Blaue Taste: surch die Stellen rotieren
+    if(t == 4)
+    {   PosCursor++;
+        if(S[PosCursor]=='.') PosCursor++; // Komma überspringen
+        if(PosCursor >= lMax) PosCursor = 0; 
+    }
+
+    // kurze Rote Taste: Übernehmen
+    if(t == -1) back = 2;
+
+    // lange Rote Taste: Abbrechen
+    if(t == 11) back = 1;
+
+    // Jetzt den Wert zurück in die Variable schreiben
+    if(d>0) V = atof(S);
+    else V = atoi(S); 
+
+    //RangeBar(23, NumberMin, NumberMax, V);
+
+    if(V<NumberMin || V>NumberMax) // Display blinken lassen wenn Wert ausserhalb der Grenzen
+    { if(millis() > ToggleTime)
+      { DisplayNumber = (DisplayNumber == 0)?1:0; //Umschalten
+        ToggleTime = millis()+300;
+      }
+    } else DisplayNumber = 1;
+
+    display.display();
+    delay(80);
+  }
+
+  if(V>NumberMax) V = NumberMax;
+  if(V<NumberMin) V = NumberMin;
+  
+  if(back == 1) return v;
+  else return V;
+}
 
 
-
-
-void RangeBar(int posy, double min, double max, double akt)
+void RangeBar(int posy, float min, float max, float akt)
 { int posx;
   
   //Min Markierung zeichnen
@@ -1290,7 +1396,7 @@ void RangeBar(int posy, double min, double max, double akt)
 }
 
 
-void drawWeighingBar(int posy, double min, double max, double akt)
+void drawWeighingBar(int posy, float min, float max, float akt)
 { int width = (int)((akt-min) * 100 / (max-min));
   
   //Rahmen zeichnen
@@ -1307,236 +1413,50 @@ void drawWeighingBar(int posy, double min, double max, double akt)
 }
 
 
-// Dimentions of myScreen. You may change
-#define M 128
-#define N 64
-
-// Füllt eine umschlossene Fläche
-// quelle:   algorithmus https://www.youtube.com/watch?v=VuiXOc81UDM
-//           queue in C++ https://www.geeksforgeeks.org/queue-cpp-stl/ 
-void floodFill(uint8_t X, uint8_t Y, bool newColor) 
-{   std::queue<uint8_t> qx, qy;
-    uint8_t x = X;
-    uint8_t y = Y;
-
-    qx.push(x);
-    qy.push(y);
-
-    while(!qx.empty()){
-      x = qx.front(); qx.pop();
-      y = qy.front(); qy.pop();
-       
-      // Base cases 
-      if (x < 0 || x >= M || y < 0 || y >= N || display.getPixel(x,y) == newColor)
-        continue; 
-      else {
-        // Replace the color at cell (x, y) 
-        if(newColor == true) display.setPixel(x, y);
-        else display.clearPixel(x,y);
-        
-        qx.push(x+1); qy.push(y); // North
-        qx.push(x-1); qy.push(y); // South
-        qx.push(x); qy.push(y+1); // East
-        qx.push(x); qy.push(y-1); // West
-      }
-    }
-} 
-
-
-
-// Zeichnet einen Kreisbogenabschnitt und gibt die koordinaten des start und endpunktes zurück
-// Parameter: Mittelpunkt, radius, startwinkel und endwinkel
-sStartEndCoordinates Kreisbogen(uint8_t x, uint8_t y, uint8_t radius, uint16_t sw, uint16_t ew)
-{  int16_t dy0, dy, a, b;
-   int16_t dx0, dx;
-   int16_t alpha, startw, endw, tmp;
-   sStartEndCoordinates points;
-
-   // Der Startwinkel muss kleiner sein als der Endwinkel
-   if(sw > ew) {
-    startw = ew;
-    endw = sw;
-   } else{ 
-    startw = sw;
-    endw = ew;
-   }
-
-   // Winkel sind im Bereich von 0 bis 360 sonst passt es nicht mit der Sinus Lookup Tabelle
-   sw %= 360;
-   ew %= 360;
-   
-   for(alpha = startw; alpha <= endw; alpha+=2)
-   {  // Sinus
-      dx = ((int8_t)pgm_read_byte_near(SinusDisplayTable64+alpha) * radius)>>6;  // dx = sin(alpha*PI/180) * radius; 
-      // Cosinus eilt dem Sinus um 90° nach 
-      if(alpha < 90) tmp = 270+alpha;
-      else tmp = alpha-90;   
-      dy = ((int8_t)pgm_read_byte_near(SinusDisplayTable64+tmp) * radius)>>6;    // dy = cos(alpha*PI/180) * radius;
-     
-      //display.setPixel(x+dx, y+dy);
-     if(alpha != startw) {
-      display.drawLine(x-dx0, y-dy0, x-dx, y-dy);
-     } else {
-      points.Sx = x-dx;
-      points.Sy = y-dy;
-     }
-      dx0 = dx;
-      dy0 = dy; 
-   }  
-   points.Ex = x-dx;
-   points.Ey = y-dy;
-
-   return points;
-}
-
-
-void Kreisausschnitt(uint8_t x, uint8_t y, uint8_t radius, uint16_t startw, uint16_t endw)
-{ sStartEndCoordinates pA;
-  int16_t dx, dy, tcos;
-  uint16_t wm = (endw+startw)/2;
-  uint8_t rm = radius/2;
-  
-  pA = Kreisbogen(x, y, radius, startw, endw);
-  display.drawLine(pA.Sx, pA.Sy, x, y);
-  display.drawLine(pA.Ex, pA.Ey, x, y);
-  
-  dx = ((int8_t)pgm_read_byte_near(SinusDisplayTable64+wm) * rm)>>6;
-  if(wm < 90) tcos = 270+wm;
-  else tcos = wm-90;   
-  // Cosinus eilt dem Sinus um 90° nach   
-  dy = ((int8_t)pgm_read_byte_near(SinusDisplayTable64+tcos) * rm)>>6;
-
-  floodFill(x-dx, y-dy, 1);
-}
-
-void Kreisringsektor(uint8_t x, uint8_t y, uint8_t rInnen, uint8_t rAussen, uint16_t startw, uint16_t endw)
-{ sStartEndCoordinates pI, pA;
-  int16_t dx, dy, tcos;
-  uint16_t wm = (endw+startw)/2;
-  uint8_t rm = (rAussen+rInnen)/2;
-  
-  pI = Kreisbogen(x, y, rInnen, startw, endw);
-  pA = Kreisbogen(x, y, rAussen, startw, endw);
-  display.drawLine(pA.Sx, pA.Sy, pI.Sx, pI.Sy);
-  display.drawLine(pA.Ex, pA.Ey, pI.Ex, pI.Ey);
-  
-  dx = ((int8_t)pgm_read_byte_near(SinusDisplayTable64+wm) * rm)>>6;
-  if(wm < 90) tcos = 270+wm;
-  else tcos = wm-90;   
-  // Cosinus eilt dem Sinus um 90° nach   
-  dy = ((int8_t)pgm_read_byte_near(SinusDisplayTable64+tcos) * rm)>>6;
-
-  floodFill(x-dx, y-dy, 1);
-}
-
-// x,y: Mittelpunkt des Kreises; w: Winkel; r1: Abstand vom Mittelpunkt wo die Linie anfängt; r2: Abstand vom Mittelpunkt wo die Linie endet
-void Kreisskala(uint8_t x, uint8_t y, uint16_t w, uint8_t r1, uint8_t r2)
-{ int16_t x1, y1, x2, y2;
-  int16_t tcos;
-
-  x1 = ((int8_t)pgm_read_byte_near(SinusDisplayTable64+w) * r1)>>6;
-  x2 = ((int8_t)pgm_read_byte_near(SinusDisplayTable64+w) * r2)>>6;
-  if(w < 90) tcos = 270+w;
-  else tcos = w-90;   
-  // Cosinus eilt dem Sinus um 90° nach   
-  y1 = ((int8_t)pgm_read_byte_near(SinusDisplayTable64+tcos) * r1)>>6;
-  y2 = ((int8_t)pgm_read_byte_near(SinusDisplayTable64+tcos) * r2)>>6;
-
-  display.drawLine(x-x1, y-y1, x-x2, y-y2);
-}
-
-
-
-void ShutDownOrNot(void)
-{ long i;
-  long z;
-  unsigned int a;
-  
-  Serial.println("System wird in 1 Minute herunter gefahren!");
-  display.setFont(ArialMT_Plain_16);
-  InputTimeout = millis() + 60000;
-
-  while(analogRead(A0)>930){  // AD-Wert einlesen  
-    z=millis();
-    if(InputTimeout < z){
-      Serial.println("Bye!");
-      digitalWrite(D0, LOW); // Ausschalten
-      Serial.println("In charging mode. Can not turn off!");
-      break;
-    }
-    display.clear();
-    //display.drawString(0,0, "Auto off in");
-    display.drawString(0,44, "Weiter mit Taste");
-    display.drawCircle(64, 24, 16);
-    for(long j=0; j<360; j+=30) Kreisskala(64, 24, j, j%90?14:12, 16);
-    i= ((InputTimeout - z) * 360 / 60000);
-    Kreisausschnitt(64, 24, 15, 0, i);
-    display.display();
-    delay(100);
-  }
-
-  InputTimeout = millis() + TIMEOUTTIME;
-}
-
-
 int8_t getkey(void)
 { unsigned int a = analogRead(A0);  // AD-Wert einlesen
   int8_t k;
   static int8_t prev_k;
   static long int m_start;
-  static int8_t repeat_k;
   char b[60];
 
   // Wert geht von 0 bis 1024
   // Tastenabstand bei 4 Tastern (Abhängig vom Spannungsteiler) 1024/5 = 205 (Bereich +-50)
   // Keine Taste gedrückt Wert > 1000
+  // Power 9 -> (0   : Bereich 0 - 100)
   // Taste 1 -> (235 : Bereich 185 - 285)
   // Taste 2 -> (390 : Bereich 340 - 440)
   // Taste 3 -> (585 : Bereich 535 - 635)
   // Taste 4 -> (775 : Bereich 725 - 825)
-
+  
   // Single Tastendruck
   if(a > 930) k = 0;  // Keine Taste gedrückt
   if(a>725 && a<825) k = 1;
   if(a>535 && a<635) k = 2;
   if(a>340 && a<440) k = 3;
   if(a>185 && a<285) k = 4;
-  if(a>=0 && a<100)  k = 9;
+  if(a>=0 && a<100)  k = 9;  // Power Knopf
 
   if(k != prev_k)
-  { if(k==0 && prev_k>0 && repeat_k==0)
+  { if(k==0 && prev_k>0 && prev_k<10)
     { k = -prev_k;
       prev_k = 0;
+      return k;
     } else 
     { m_start = millis();  // Zeitpunkt merken
       prev_k = k;
-      repeat_k = 0;  // Vorbereiten für die Wiederholung
+      value.Button = k;
+      return k;
     }
   } else
-  { if((k != 0) && (((repeat_k==0) && ((millis()-m_start) > 500)) || ((repeat_k>0) && ((millis()-m_start) > 130))) )
-    { m_start = millis();
-      if(repeat_k == 0) {
-        k=k+10;
-        repeat_k=1;
-      } else if(repeat_k == 1){ // im 130ms abstand zwischen repeat_k=1 und 2 hin und her schalten bei langem Tastendruck
-        repeat_k=2;
-        k=k+20;
-      } else {
-        repeat_k=1;
-        k=0;
-      }
-    } else k=0;
+  { if((k != 0) && (millis()-m_start > 700))
+    { prev_k = k;
+      k=k+10;
+      value.Button = k;
+      return k;  
+    } else return 0;
   }
-
-  if(InputTimeout < millis()){
-    ShutDownOrNot();
-    // Wenn hier angekommen dann shutdown abgerochen
-    k=0;
-  }
-  if(k!=0) InputTimeout = millis() + TIMEOUTTIME;
-  return k;
 }
-
 
 
 //////////////////////////////////////////////////////////////
@@ -1564,7 +1484,7 @@ void WriteSettings(void)  // Max 255Byte!
 // KALIBRIEREN
 void KalibrierMenu(void)
 {  long k;
-   double kali;  
+   float kali;  
    int8_t t; // Taste die gedrückt wurde
   display.setFont(ArialMT_Plain_16);
   
@@ -1607,7 +1527,7 @@ void KalibrierMenu(void)
   display.drawString(0, 36, "... Lese Waage ...");
   display.display();
   k = scale.get_units(10);
-  kali = (double)k / 2000;
+  kali = (float)k / 2000;
   
   scale.set_scale(kali);
 
@@ -1627,7 +1547,7 @@ void KalibrierMenu(void)
     display.drawString(115, 35, "g"); 
     display.setTextAlignment(TEXT_ALIGN_RIGHT);
     display.setFont(Roboto_Slab_Bold_34);
-    display.drawString(110, 26, String((double)k/10,1));
+    display.drawString(110, 26, String((float)k/10,1));
     display.setTextAlignment(TEXT_ALIGN_LEFT);
     // write the buffer to the display
      display.display();
@@ -1871,10 +1791,10 @@ void initSDCard(void){
   volumesize /= 1024;
   Serial.println(volumesize);
   Serial.print("Volume size (Gb):  ");
-  Serial.println((double)volumesize / 1024.0);
+  Serial.println((float)volumesize / 1024.0);
  
   Serial.print("Card size:  ");
-  Serial.println((double)SD.size()/1000);
+  Serial.println((float)SD.size()/1000);
  
   FSInfo fs_info;
   SDFS.info(fs_info);
